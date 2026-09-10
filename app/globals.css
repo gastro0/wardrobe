@@ -244,7 +244,10 @@ button {color:inherit}
 @media (max-width:639px) {
   .form-dialog,.outfit-dialog,.city-dialog {
     top:0;left:0;bottom:auto;width:100%;max-width:100%!important;height:100dvh;max-height:100dvh;
-    transform:none;translate:none;border:0;box-shadow:none;align-content:start;
+    /* Reset the centering variables too: CSS optimization can fold translate:none
+       into transform, leaving the primitive's independent -50% translate active. */
+    --tw-translate-x:0px;--tw-translate-y:0px;
+    transform:none;translate:0px 0px!important;border:0;box-shadow:none;align-content:start;
     padding:calc(22px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
     animation:none!important;
   }
