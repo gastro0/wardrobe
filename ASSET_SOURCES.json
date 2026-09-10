@@ -1,0 +1,87 @@
+[
+  {
+    "file": "public/images/cream-tshirt.jpg",
+    "title": "Cream T-shirt",
+    "source_page": "https://www.etsy.com/uk/market/260gsm_cotton_t_shirt",
+    "image_url": "https://i.etsystatic.com/60517736/r/il/7911e7/7681651076/il_fullxfull.7681651076_boyi.jpg",
+    "bytes": 23094,
+    "reuse": "Product photograph; no reuse license asserted or verified.",
+    "dimensions": [
+      1400,
+      1400
+    ]
+  },
+  {
+    "file": "public/images/blue-shirt.jpg",
+    "title": "Light blue Oxford shirt",
+    "source_page": "https://www.suitableshop.nl/steppin-out/overhemden/steppin-out-overhemd-oxford-lichtblauw-86471.html",
+    "image_url": "https://cdn.suitableshop.net/images/1200x1699/products/steppin-out-overhemd-oxford-lichtblauw--full--86471-1.jpg",
+    "bytes": 161557,
+    "reuse": "Product photograph; no reuse license asserted or verified.",
+    "dimensions": [
+      1200,
+      1699
+    ]
+  },
+  {
+    "file": "public/images/dark-jeans.jpg",
+    "title": "Dark straight jeans",
+    "source_page": "https://www.joesjeans.com/products/the-classic-32-inseam-ferrin",
+    "image_url": "https://www.joesjeans.com/cdn/shop/files/tm7frr8220_ferrin_l.jpg?v=1758831137",
+    "bytes": 684205,
+    "reuse": "Product photograph; no reuse license asserted or verified.",
+    "dimensions": [
+      3000,
+      4000
+    ]
+  },
+  {
+    "file": "public/images/olive-jacket.png",
+    "title": "Olive utility jacket",
+    "source_page": "https://www.andsons.us/products/carter-jungle-jacket-olive",
+    "image_url": "https://www.andsons.us/cdn/shop/files/Jacket_Carter_Jungle_Olive_FLATLAY_1.png?v=1760953033&width=640",
+    "bytes": 387648,
+    "reuse": "Product photograph; no reuse license asserted or verified.",
+    "dimensions": [
+      640,
+      640
+    ]
+  },
+  {
+    "file": "public/images/black-tote.jpg",
+    "title": "Black leather tote",
+    "source_page": "https://thursdayboots.com/products/womens-everyday-leather-tote-bag-black-extra-large-gold",
+    "image_url": "https://thursdayboots.com/cdn/shop/files/1024x1024-Womens-EverydayTote-BlackGold-XL-101024-Front_1200x1200.jpg?v=1731520326",
+    "bytes": 36708,
+    "reuse": "Product photograph; no reuse license asserted or verified.",
+    "dimensions": [
+      1024,
+      1024
+    ]
+  },
+  {
+    "file": "public/images/white-sneakers.jpg",
+    "title": "White leather sneakers",
+    "source_page": "https://saschbrands.com/en/products/patike-61",
+    "image_url": "https://saschbrands.com/cdn/shop/files/SCHPATIKAAO22538SCBIANCO_6.jpg?v=1755701925&width=2048",
+    "bytes": 192534,
+    "reuse": "Product photograph; no reuse license asserted or verified.",
+    "dimensions": [
+      2048,
+      2048
+    ]
+  },
+  {
+    "file": "public/images/wardrobe-rail.jpg",
+    "title": "Neutral clothing rail",
+    "source_page": "https://unsplash.com/photos/clothes-hanging-on-a-rack-in-a-boutique-pt3EBzQcxP0",
+    "image_url": "https://images.unsplash.com/photo-1767968037382-8eb9c564339f?auto=format&fit=crop&w=1600&q=85",
+    "bytes": 612291,
+    "reuse": "Source page explicitly states: Free to use under the Unsplash License.",
+    "dimensions": [
+      1600,
+      2400
+    ],
+    "photographer": "Polina Kuzovkova"
+  }
+]
