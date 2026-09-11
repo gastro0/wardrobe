@@ -3,14 +3,14 @@ export const categories:Record<Category,string>={top:"Верх",bottom:"Низ",
 export type Item={id:string;name:string;category:Category;color:string;minTemp:number;maxTemp:number;rainproof:boolean;windproof:boolean;image:string;createdAt?:string};
 export type Outfit={id:string;name:string;itemIds:string[];createdAt:string};
 export type City={name:string;latitude:number;longitude:number;country?:string;admin1?:string};
-export type Conditions={temperature:number;feels:number;code:number;wind:number;rain:number;probability:number;isDay:boolean};
-export type Day={date:string;min:number;max:number;feels:number;code:number;wind:number;rain:number;probability:number};
-export type Weather={current:Conditions;days:Day[];timezone:string;time:string;fetchedAt:string};
+export type Conditions={temperature:number;feels:number;code:number;wind:number;rain:number;probability:number|null;isDay:boolean};
+export type Day={date:string;min:number;max:number;feels:number;code:number;wind:number;rain:number;probability:number|null};
+export type Weather={current:Conditions;days:Day[];timezone:string;time:string;fetchedAt:string;source?:"met-no"|"open-meteo";stale?:boolean;feelsEstimated?:boolean};
 export const defaultCity:City={name:"Москва",latitude:55.75222,longitude:37.61556};
 export function degree(n:number){return `${n>0?"+":""}${Math.round(n)}°`}
 export function weatherKind(code:number){if(code>=95)return "storm";if([71,73,75,77,85,86].includes(code))return "snow";if(code>=51)return "rain";if(code>=45)return "fog";if(code>=3)return "cloud";if(code>0)return "partly";return "sun"}
 export function weatherLabel(code:number,isDay=true){return ({storm:"Гроза",snow:"Снег",rain:"Дождь",fog:"Туман",cloud:"Облачно",partly:"Переменная облачность",sun:isDay?"Ясно":"Ясная ночь"})[weatherKind(code)]}
-export function isWet(w:Conditions){return w.rain>0||w.probability>=45||["rain","snow","storm"].includes(weatherKind(w.code))}
+export function isWet(w:Conditions){return w.rain>0||(w.probability!==null&&w.probability>=45)||["rain","snow","storm"].includes(weatherKind(w.code))}
 export function weatherAdvice(w:Conditions){const lines:string[]=[];if(w.feels>=28)lines.push("Жарко: выбирайте лёгкие, свободные вещи.");else if(w.feels>=22)lines.push("Тепло: подойдут футболка, рубашка или лёгкое платье.");else if(w.feels>=15)lines.push("Нужен лёгкий слой: рубашка, жакет или ветровка.");else if(w.feels>=5)lines.push("Прохладно: добавьте тёплый верх и закрытую обувь.");else lines.push("Холодно: выбирайте тёплые слои, зимнюю обувь, шапку и перчатки.");if(isWet(w))lines.push("Возьмите зонт; лучше выбрать непромокаемую обувь.");if(w.wind>=8)lines.push("Ветрено: пригодится одежда с защитой от ветра.");if(weatherKind(w.code)==="sun"&&w.isDay)lines.push("В ясную погоду пригодятся очки и головной убор.");if(w.code>=95)lines.push("Возможна гроза — учитывайте предупреждения местных служб.");return lines}
 export function suitable(item:Item,w:Conditions){return w.feels>=item.minTemp&&w.feels<=item.maxTemp}
 export function recommend(items:Item[],w:Conditions,variation=0){const wet=isWet(w);const warnings:string[]=[];const missing:string[]=[];const selected:Item[]=[];const candidates=(category:Category)=>items.filter(i=>i.category===category&&suitable(i,w));const pick=(list:Item[])=>{const sorted=[...list].sort((a,b)=>Number(b.rainproof&&wet)-Number(a.rainproof&&wet)||Number(b.windproof&&w.wind>=8)-Number(a.windproof&&w.wind>=8));if(!sorted.length)return undefined;const best=sorted.filter(i=>(!wet||!sorted[0].rainproof||i.rainproof)&&(!(w.wind>=8)||!sorted[0].windproof||i.windproof));return best[variation%best.length]};
