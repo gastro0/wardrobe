@@ -4,6 +4,39 @@ import PhotoWorker from "./clothing-photo.worker?worker";
 export type PhotoProgress = (message: string) => void;
 export type PhotoBounds = {left: number; top: number; width: number; height: number};
 
+// A segmentation confidence is not the garment's physical transparency.
+// Make the foreground solid while retaining a soft transition at its edges.
+// Respect any transparency already present in the original PNG/WebP.
+export function refineForegroundAlpha(pixels: Uint8ClampedArray, original: Uint8ClampedArray): void {
+  for (let i = 3; i < pixels.length; i += 4) {
+    const confidence = Math.max(0, Math.min(1, (pixels[i] - 16) / 112));
+    const alpha = Math.round(255 * confidence * confidence * (3 - 2 * confidence));
+    pixels[i] = Math.min(original[i], alpha);
+  }
+}
+
+// Discard only tiny detached mask islands; connected details such as laces
+// remain part of the garment, regardless of their thickness.
+export function removeMaskSpeckles(pixels: Uint8ClampedArray, width: number, height: number): void {
+  const total=width*height;
+  const visited=new Uint8Array(total);
+  const queue=new Int32Array(total);
+  const minimum=Math.max(4,Math.round(total*0.0005));
+  for(let start=0;start<total;start++){
+    if(visited[start]||pixels[start*4+3]<=8)continue;
+    let read=0,count=1;queue[0]=start;visited[start]=1;
+    while(read<count){
+      const index=queue[read++],x=index%width,y=Math.floor(index/width);
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if((dx===0&&dy===0)||x+dx<0||x+dx>=width||y+dy<0||y+dy>=height)continue;
+        const next=index+dy*width+dx;
+        if(!visited[next]&&pixels[next*4+3]>8){visited[next]=1;queue[count++]=next}
+      }
+    }
+    if(count<minimum)for(let i=0;i<count;i++)pixels[queue[i]*4+3]=0;
+  }
+}
+
 // Read the alpha channel so that light and white clothing remains foreground.
 export function foregroundBounds(pixels: Uint8ClampedArray, width: number, height: number): PhotoBounds | null {
   let left = width, top = height, right = -1, bottom = -1;
@@ -51,6 +84,7 @@ export function removeClothingBackground(file: File, progress?: PhotoProgress): 
     if (!context) { bitmap.close(); throw new Error("Не удалось подготовить фотографию."); }
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
+    const originalPixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
     const normalized = await canvasBlob(canvas);
     worker ??= new PhotoWorker();
     const pixels = new Uint8ClampedArray(await new Promise<ArrayBuffer>((resolve, reject) => {
@@ -68,9 +102,8 @@ export function removeClothingBackground(file: File, progress?: PhotoProgress): 
       currentWorker.postMessage({image: normalized, publicPath: new URL("/background-removal/1.7.0/", window.location.origin).href});
     }));
     if (pixels.length !== canvas.width * canvas.height * 4) throw new Error("Не удалось обработать фотографию.");
-    // Quantized masks can leave faint noise on the background. Normalize alpha
-    // without looking at RGB, preserving white clothing and soft garment edges.
-    for (let i = 3; i < pixels.length; i += 4) pixels[i] = Math.max(0, Math.round((pixels[i] - 80) * 255 / 175));
+    refineForegroundAlpha(pixels, originalPixels);
+    removeMaskSpeckles(pixels, canvas.width, canvas.height);
     const bounds = foregroundBounds(pixels, canvas.width, canvas.height);
     if (!bounds) throw new Error("Не удалось выделить вещь. Попробуйте другое фото.");
     context.putImageData(new ImageData(pixels, canvas.width, canvas.height), 0, 0);

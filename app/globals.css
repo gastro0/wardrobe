@@ -201,7 +201,9 @@ button {color:inherit}
 .upload-placeholder small {font-size:.75rem;color:#666}
 .replace-photo {position:absolute;bottom:12px}
 .photo-controls {display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
-.photo-controls-preview {position:absolute;bottom:12px;left:12px;right:12px}
+.photo-controls-preview {position:relative;width:100%;padding:8px;background:#fff}
+.photo-version-switch {display:flex;flex-wrap:wrap;justify-content:center;gap:8px;width:100%}
+.photo-result-help {width:100%;font-size:.75rem;line-height:1.5;text-align:center;color:#555}
 .photo-processing {position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;background:rgba(244,244,244,.94);text-align:center}
 .photo-processing strong {font-size:.875rem;font-weight:500}
 .photo-processing span {font-size:.75rem;color:#666;max-width:230px}
