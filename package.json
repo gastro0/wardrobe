@@ -15,7 +15,11 @@
     "test:wardrobe": "node scripts/test-wardrobe.mjs",
     "images:prepare": "node scripts/prepare-background-removal.mjs",
     "db:generate": "drizzle-kit generate",
-    "test:photos": "node scripts/test-clothing-photo.mjs"
+    "test:photos": "node scripts/test-clothing-photo.mjs",
+    "test": "node scripts/test.mjs",
+    "test:looks": "node scripts/test-looks.mjs",
+    "test:e2e": "node --test tests/e2e/wardrobe.test.mjs",
+    "typecheck": "tsc --noEmit --incremental false"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

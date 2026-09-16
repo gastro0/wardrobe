@@ -1,14 +1,7 @@
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
-import ts from "typescript";
-
-const compile = file => ts.transpileModule(readFileSync(file, "utf8"), {
-  compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext},
-}).outputText;
-const url = code => "data:text/javascript;base64," + Buffer.from(code).toString("base64");
-const wardrobeUrl = url(compile("lib/wardrobe.ts"));
-const {randomOutfit} = await import(url(compile("lib/random-outfit.ts").replace('"./wardrobe"', JSON.stringify(wardrobeUrl))));
-const {categoryGroup} = await import(wardrobeUrl);
+import {importTestModule} from "./test-module.mjs";
+const {randomOutfit} = await importTestModule("lib/random-outfit.ts");
+const {categoryGroup} = await importTestModule("lib/wardrobe.ts");
 const item = (id, category) => ({id, category});
 const items = [item("top1", "tshirt"), item("top2", "shirt"), item("bottom", "jeans"), item("dress", "dress"), item("shoe", "sneakers"), item("coat", "coat"), item("bag", "bag")];
 assert.deepEqual(randomOutfit([]), []);

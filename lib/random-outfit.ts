@@ -2,8 +2,8 @@ import {categoryGroup, type CategoryGroup, type Item} from "./wardrobe";
 
 // Mix categories independently, so pieces from different saved looks can meet.
 export function randomOutfit(items: Item[], previous: string[] = [], random = Math.random): Item[] {
-  const groups: CategoryGroup[] = ["top", "bottom", "dress", "shoes", "outerwear", "accessory"];
-  const pool = Object.fromEntries(groups.map(group => [group, items.filter(item => categoryGroup(item.category) === group)])) as Record<CategoryGroup, Item[]>;
+  const pool: Record<CategoryGroup, Item[]> = {top: [], bottom: [], dress: [], shoes: [], outerwear: [], accessory: []};
+  for (const item of items) pool[categoryGroup(item.category)].push(item);
   const pick = (choices: Item[]) => choices[Math.floor(random() * choices.length)];
   const separates = [...(pool.top.length ? [pick(pool.top)] : []), ...(pool.bottom.length ? [pick(pool.bottom)] : [])];
   const useDress = pool.dress.length > 0 && (!separates.length || random() < 0.5);
