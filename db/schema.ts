@@ -1,5 +1,37 @@
-import {sqliteTable,text,integer,real,index} from "drizzle-orm/sqlite-core";
-export const wardrobeItems=sqliteTable("wardrobe_items",{id:text("id").primaryKey(),userId:text("user_id").notNull(),name:text("name").notNull(),category:text("category").notNull(),color:text("color").notNull(),tags:text("tags").notNull().default("[]"),minTemp:integer("min_temp").notNull(),maxTemp:integer("max_temp").notNull(),rainproof:integer("rainproof").notNull().default(0),windproof:integer("windproof").notNull().default(0),imageKey:text("image_key").notNull(),createdAt:text("created_at").notNull()},t=>[index("idx_wardrobe_items_user").on(t.userId)]);
-export const outfits=sqliteTable("outfits",{id:text("id").primaryKey(),userId:text("user_id").notNull(),name:text("name").notNull(),itemIds:text("item_ids").notNull(),createdAt:text("created_at").notNull()},t=>[index("idx_outfits_user").on(t.userId)]);
-export const settings=sqliteTable("wardrobe_settings",{userId:text("user_id").primaryKey(),city:text("city").notNull(),latitude:real("latitude").notNull(),longitude:real("longitude").notNull()});
-export const profiles=sqliteTable("wardrobe_profiles",{userId:text("user_id").primaryKey(),name:text("name").notNull(),gender:text("gender",{enum:["male","female","unspecified"]}).notNull().default("unspecified")});
+import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const wardrobeItems = sqliteTable("wardrobe_items", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  category: text("category").notNull(),
+  color: text("color").notNull(),
+  tags: text("tags").notNull().default("[]"),
+  minTemp: integer("min_temp").notNull(),
+  maxTemp: integer("max_temp").notNull(),
+  rainproof: integer("rainproof").notNull().default(0),
+  windproof: integer("windproof").notNull().default(0),
+  imageKey: text("image_key").notNull(),
+  createdAt: text("created_at").notNull(),
+}, table => [index("idx_wardrobe_items_user").on(table.userId)]);
+
+export const outfits = sqliteTable("outfits", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  itemIds: text("item_ids").notNull(),
+  createdAt: text("created_at").notNull(),
+}, table => [index("idx_outfits_user").on(table.userId)]);
+
+export const settings = sqliteTable("wardrobe_settings", {
+  userId: text("user_id").primaryKey(),
+  city: text("city").notNull(),
+  latitude: real("latitude").notNull(),
+  longitude: real("longitude").notNull(),
+});
+
+export const profiles = sqliteTable("wardrobe_profiles", {
+  userId: text("user_id").primaryKey(),
+  name: text("name").notNull(),
+  gender: text("gender", { enum: ["male", "female", "unspecified"] }).notNull().default("unspecified"),
+});

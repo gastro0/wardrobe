@@ -1,92 +1,240 @@
 "use client";
-import {useCallback,useEffect,useState} from "react";
-import {Shirt as Hanger,Plus,MapPin,CloudSun,CloudRain,CloudSnow,CloudLightning,CloudFog,Cloud,Sun,Moon,Droplets,ArrowUpRight,ChevronDown,Check,Layers,Shirt,UserRound,RefreshCw,Trash2,Pencil,Info} from "lucide-react";
-import {Tabs,TabsList,TabsTrigger,TabsContent} from "@/components/ui/tabs";
-import {Skeleton} from "@/components/ui/skeleton";
-import {Empty,EmptyHeader,EmptyTitle,EmptyDescription,EmptyContent} from "@/components/ui/empty";
-import {AlertDialog,AlertDialogContent,AlertDialogTitle,AlertDialogDescription,AlertDialogFooter,AlertDialogCancel,AlertDialogAction} from "@/components/ui/alert-dialog";
-import {Toaster,toast} from "sonner";
-import {categories,availableCategories,defaultCity,degree,weatherKind,weatherLabel,weatherAdvice,suitable,type Item,type Outfit,type City,type Profile} from "@/lib/wardrobe";
-import {demoItems,demoOutfits} from "@/lib/demo";
-import {api} from "@/lib/client";
-import {useTelegramNavigation} from "@/hooks/use-telegram-navigation";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CloudSun, ChevronDown, Info, Layers, MapPin, Plus, Shirt as Hanger, UserRound } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Toaster, toast } from "sonner";
+import { defaultCity, type City, type Item, type Outfit, type Profile } from "@/lib/wardrobe";
+import { demoItems, demoOutfits } from "@/lib/demo";
+import { api } from "@/lib/client";
+import { useTelegramNavigation } from "@/hooks/use-telegram-navigation";
+import { useWeather } from "@/hooks/use-weather";
+import { useWardrobeView } from "@/hooks/use-wardrobe-view";
+import CityPicker from "./city-picker";
 import ItemEditor from "./item-editor";
 import OutfitEditor from "./outfit-editor";
 import OutfitsSection from "./outfits-section";
-import {useWeather} from "@/hooks/use-weather";
-import {useWardrobeView} from "@/hooks/use-wardrobe-view";
-import OutfitCollage from "./outfit-collage";
-import CityPicker from "./city-picker";
 import ProfileEditor from "./profile-editor";
-import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue} from "@/components/ui/select";
-function WeatherIcon({code=0,isDay=true,className=""}:{code?:number;isDay?:boolean;className?:string}){const Icon=({storm:CloudLightning,snow:CloudSnow,rain:CloudRain,fog:CloudFog,cloud:Cloud,partly:CloudSun,sun:isDay?Sun:Moon})[weatherKind(code)];return <Icon className={className} aria-hidden="true"/>}
-const colours:Record<string,string>={"Молочный":"#efe6cc","Белый":"#fff","Бежевый":"#c2a27d","Чёрный":"#292a28","Коричневый":"#825c43","Серый":"#9d9d98","Синий":"#354f70","Голубой":"#94b6d2","Зелёный":"#477a4f","Оливковый":"#69734b","Красный":"#b4473c","Розовый":"#d497a3","Жёлтый":"#d5b956","Разноцветный":"linear-gradient(120deg,#c37c7b,#efc971,#8db3ad)"};
-function Photo({item,className=""}:{item:Item;className?:string}){const [failed,setFailed]=useState(false);return failed?<span className="photo-failed"><Shirt/><small>Не удалось загрузить фото</small></span>:<img className={className} src={item.image} alt={item.name} loading="lazy" onError={()=>setFailed(true)}/>}
+import WardrobeSection from "./wardrobe-section";
+import WeatherSection from "./weather-section";
 
-export default function WardrobeApp({initialName}:{initialName?:string}){
- const [profile,setProfile]=useState<Profile|null>(null);
- const [profileOpen,setProfileOpen]=useState(false);
- const gender=profile?.gender??"unspecified";
- const [tab,setTab]=useState("wardrobe");
- const [items,setItems]=useState<Item[]>([]);
- const [outfits,setOutfits]=useState<Outfit[]>([]);
- const [samples,setSamples]=useState<Outfit[]>(demoOutfits);
- const [demo,setDemo]=useState(false);
- const [loading,setLoading]=useState(true);
- const [loadError,setLoadError]=useState("");
- const [loaded,setLoaded]=useState(false);
- const [city,setCity]=useState<City>(defaultCity);
- const [cityOpen,setCityOpen]=useState(false);
- const [category,setCategory]=useState("all");
- const [editor,setEditor]=useState<{item:Item|null}|null>(null);
- const [builder,setBuilder]=useState<Partial<Outfit>|null>(null);
- const [deleting,setDeleting]=useState<{type:"item"|"outfit";id:string;name:string}|null>(null);
- const [deleteBusy,setDeleteBusy]=useState(false);
- const [deleteError,setDeleteError]=useState("");
- const [variation,setVariation]=useState(0);
- const dialogOpen=!!(editor||builder||deleting||cityOpen||profileOpen);
- const telegramBack=useCallback(()=>{
-  if(dialogOpen){
-   // Use the dialog's existing Escape handling to preserve focus and busy guards.
-   (document.activeElement??document).dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));
-  }else setTab("wardrobe");
- },[dialogOpen]);
- useTelegramNavigation(dialogOpen||tab!=="wardrobe"?telegramBack:null,!!(editor||builder||profileOpen));
- const {weather,weatherBusy,weatherError,day,setDay,refreshWeather}=useWeather(city);
- const load=useCallback(async()=>{setLoading(true);setLoadError("");try{const d=await api<{items:Item[];outfits:Outfit[];city:City|null;profile:Profile|null}>("/api/wardrobe");setProfile(d.profile);setProfileOpen(!d.profile);setItems(d.items);setOutfits(d.outfits);setDemo(d.items.length===0);if(d.city)setCity(d.city);setLoaded(true)}catch(e){setLoadError((e as Error).message)}finally{setLoading(false)}},[]);
- useEffect(()=>{load()},[load]);
- useEffect(()=>{window.scrollTo({top:0,behavior:"instant"})},[tab]);
- const {visibleItems,visibleOutfits,outfitItems,selectedWeather,recommendation,suitableOutfits}=useWardrobeView(demo?demoItems:items,demo?samples:outfits,gender,weather,day,variation);
- const current=weather?.current;
- const filtered=visibleItems.filter(i=>category==="all"||i.category===category);
- const addOwn=()=>{setBuilder(null);setEditor({item:null})};
- function savedProfile(next:Profile){setProfile(next);setCategory("all");setVariation(0);setEditor(null);setBuilder(null)} function savedItem(item:Item){setItems(old=>old.some(i=>i.id===item.id)?old.map(i=>i.id===item.id?item:i):[item,...old]);setDemo(false);setCategory("all")}
- function savedOutfit(outfit:Outfit){const setter=demo?setSamples:setOutfits;setter(old=>old.some(o=>o.id===outfit.id)?old.map(o=>o.id===outfit.id?outfit:o):[outfit,...old]);setTab("outfits")}
- async function changeCity(next:City){await api("/api/settings",{method:"POST",body:JSON.stringify(next)});setCity(next);setVariation(0);toast.success(`Погода: ${next.name}`)}
- async function remove(){if(!deleting)return;setDeleteBusy(true);setDeleteError("");try{await api(deleting.type==="item"?"/api/wardrobe":"/api/outfits",{method:"DELETE",body:JSON.stringify({id:deleting.id})});if(deleting.type==="item")setItems(old=>old.filter(i=>i.id!==deleting.id));else setOutfits(old=>old.filter(o=>o.id!==deleting.id));toast.success(deleting.type==="item"?"Вещь удалена":"Образ удалён");setDeleting(null)}catch(e){setDeleteError((e as Error).message)}finally{setDeleteBusy(false)}}
- const outfitFrom=(outfit:Outfit)=>outfitItems.get(outfit.id)??[];
- return <Tabs value={tab} onValueChange={setTab} className="app-tabs"><Toaster position="top-center" toastOptions={{style:{fontFamily:"Arial, Helvetica, sans-serif",fontSize:14}}}/>
- <header className="app-header"><button className="brand" aria-label="Форма — открыть гардероб" onClick={()=>setTab("wardrobe")}>форма</button><button className="header-city" aria-label={`Выбрать город. Сейчас: ${city.name}`} onClick={()=>setCityOpen(true)}><MapPin size={20}/><span>{city.name}</span><ChevronDown size={14}/></button><button className="header-profile" aria-label="Открыть профиль" onClick={()=>setProfileOpen(true)} disabled={!loaded}><UserRound size={20}/><span>{profile?.name??"Профиль"}</span></button></header>
- <nav className="app-navigation" aria-label="Основная навигация"><TabsList className="nav-tabs" aria-label="Разделы приложения"><TabsTrigger value="wardrobe"><Hanger/><span>Гардероб</span></TabsTrigger><TabsTrigger value="outfits"><Layers/><span>Образы</span></TabsTrigger><TabsTrigger value="weather"><CloudSun/><span>Погода</span></TabsTrigger></TabsList></nav>
- <main className="main">{tab==="wardrobe"&&profile&&<p className="profile-greeting">Привет, {profile.name}!</p>}<div className="title-row"><div><h1 className="page-title">{tab==="wardrobe"?"мой гардероб":tab==="outfits"?"мои образы":"по погоде"}</h1><p className="page-subtitle">{tab==="wardrobe"?(demo?"Здесь начнётся ваша коллекция":`${visibleItems.length} вещей в коллекции`):tab==="outfits"?"Сочетания на каждый день":"Что надеть сегодня и в ближайшие дни"}</p></div>{tab!=="weather"&&<button className="btn btn-primary title-action" aria-label={tab==="outfits"?"Создать образ":"Добавить вещь"} onClick={()=>tab==="outfits"?setBuilder({}):addOwn()} disabled={!loaded}><Plus/><span>{tab==="outfits"?"Создать образ":"Добавить вещь"}</span></button>}</div>
- {loadError&&<div className="error-panel" role="alert"><Info/><div><strong>Не удалось открыть гардероб</strong><p>{loadError}</p></div><button className="btn" onClick={load}>Повторить</button></div>}
- <TabsContent value="wardrobe">
- <div className="weather-glance" aria-busy={weatherBusy}>
- <button className="weather-glance-main" onClick={()=>setTab("weather")} aria-label="Открыть прогноз и подобрать образ">
- <WeatherIcon code={current?.code??2} isDay={current?.isDay??true}/>
- <span className="weather-glance-copy"><strong>{current?`${degree(current.temperature)} · ${city.name}`:city.name}</strong><span>{current?`${weatherLabel(current.code,current.isDay)} · ощущается ${degree(current.feels)}${weather?.stale?" · ранее загружено":""}`:weatherError?"Прогноз недоступен":"Загружаем погоду…"}</span></span>
- <ArrowUpRight size={20}/></button>
- {weatherError?<button className="weather-retry icon-button" aria-label="Повторить загрузку погоды" onClick={refreshWeather} disabled={weatherBusy}><RefreshCw className={weatherBusy?"spin":""}/></button>:null}
- </div>
- <div className="collection-heading"><div><h2>{demo?"Пример гардероба":"Все ваши вещи"}<span className="count">{loading?"—":visibleItems.length}</span></h2></div><button className="text-button" onClick={()=>setBuilder({})} disabled={!loaded||!visibleItems.length}><Layers size={16}/>Собрать образ<ArrowUpRight size={16}/></button></div>
- <div className="category-filter"><Select value={category} onValueChange={setCategory}><SelectTrigger aria-label="Категория вещей" className="category-filter-select"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">Все вещи</SelectItem>{availableCategories(gender).map(([key,label])=><SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select></div>
- {demo&&!loading&&<div className="demo-note"><span><Info size={16}/>Пока здесь примеры вещей.</span><button onClick={addOwn}>Добавить свою<Plus size={14}/></button></div>}
- {loading?<div className="items-grid">{[1,2,3,4,5,6].map(i=><div key={i}><Skeleton className="h-64 rounded-xl"/><Skeleton className="mt-4 h-4 w-36"/></div>)}</div>:!loadError&&<div className="items-grid">{filtered.map(item=><article className="item-card" key={item.id}><div className="item-image"><button className="item-open" onClick={()=>setEditor({item})} aria-label={`Открыть ${item.name}`}><Photo item={item}/></button><span className="category-badge">{categories[item.category]}</span><button className="add-to-outfit" onClick={()=>setBuilder({itemIds:[item.id]})} aria-label={`Добавить ${item.name} в образ`}><Plus size={17}/></button>{!demo&&<button className="icon-button item-delete" title="Удалить вещь" aria-label={`Удалить ${item.name}`} onClick={()=>{setDeleteError("");setDeleting({type:"item",id:item.id,name:item.name})}}><Trash2 size={20}/></button>}{current&&suitable(item,current)&&<span className="weather-badge"><WeatherIcon code={current.code}/>{degree(item.minTemp)}…{degree(item.maxTemp)}</span>}</div><div className="item-meta"><button className="item-name" onClick={()=>setEditor({item})}>{item.name}</button>{!!item.tags?.length&&<div className="tag-list item-tags" aria-label="Теги вещи">{item.tags.map(tag=><span className="clothing-tag" key={tag}>{tag}</span>)}</div>}<div className="item-detail"><span className="color-name"><i style={{background:colours[item.color]??"#d5d8ce"}}/>{item.color}</span><span>{degree(item.minTemp)} / {degree(item.maxTemp)}</span></div>{!demo&&<div className="item-actions"><button onClick={()=>setEditor({item})}><Pencil size={14}/>Изменить</button></div>}</div></article>)}{category==="all"&&<button className="add-item-card" onClick={addOwn}><span className="add-round"><Plus size={27}/></span><strong>Новая вещь</strong><span>Добавить фото</span></button>}</div>}
- {!loading&&!loadError&&!filtered.length&&category!=="all"&&<Empty className="surface"><EmptyHeader><Shirt size={34}/><EmptyTitle>Пока ничего в этой категории</EmptyTitle><EmptyDescription>Добавьте вещь или посмотрите другие категории.</EmptyDescription></EmptyHeader><EmptyContent><button className="btn btn-primary" onClick={addOwn}><Plus/>Добавить вещь</button></EmptyContent></Empty>}
- </TabsContent>
- <TabsContent value="outfits"><OutfitsSection items={visibleItems} outfits={visibleOutfits} outfitItems={outfitItems} gender={gender} demo={demo} loading={loading} error={loadError} onOpen={setBuilder} onAddOwn={addOwn} onDelete={outfit=>{setDeleteError("");setDeleting({type:"outfit",id:outfit.id,name:outfit.name})}}/></TabsContent>
- <TabsContent value="weather">{demo&&<div className="demo-note"><span><Info size={16}/>Сейчас подбор работает на примере коллекции.</span><button onClick={addOwn}>Добавить свои вещи<Plus size={14}/></button></div>}<div className="weather-page-heading"><button className="btn city-selector" onClick={()=>setCityOpen(true)}><MapPin/>{city.name}<ChevronDown size={15}/></button><button className="text-button" onClick={refreshWeather} disabled={weatherBusy}><RefreshCw size={15} className={weatherBusy?"spin":""}/>Обновить</button></div>{weatherError&&<div className="error-panel" role="alert"><CloudSun/><p>{weatherError}</p><button className="btn" onClick={refreshWeather} disabled={weatherBusy}>Повторить</button></div>}{weather?<><div className="forecast-grid">{weather.days.map((d,i)=><button key={d.date} className={`forecast-day ${day===i?"selected-day":""}`} onClick={()=>{setDay(i);setVariation(0)}} aria-pressed={day===i}><div className="forecast-day-name">{i===0?"Сегодня":i===1?"Завтра":new Date(d.date+"T12:00:00").toLocaleDateString("ru-RU",{weekday:"short",day:"numeric",month:"short"})}<span>{i===0?"сейчас":"днём"}</span></div><WeatherIcon code={i===0?weather.current.code:d.code} isDay={i===0?weather.current.isDay:true}/><strong>{degree(i===0?weather.current.temperature:d.max)}</strong><div className="forecast-day-meta"><span>Мин. {degree(d.min)}</span><span><Droplets size={12}/>{d.probability===null?"Нет данных":`${Math.round(d.probability)}%`}</span></div></button>)}</div><div className="recommendation-layout"><section className="weather-advice surface"><div className="eyebrow">На выбранный день</div><h2>{selectedWeather!.feels>=22?"Полегче и посвободнее":selectedWeather!.feels>=15?"Возьмите ещё один слой":"Самое время утеплиться"}</h2><p className="feels-detail">Ощущается как {degree(selectedWeather!.feels)} · {weatherLabel(selectedWeather!.code,selectedWeather!.isDay)}</p><div className="advice-lines">{weatherAdvice(selectedWeather!,gender).map((line,i)=><p key={line}><span>{i===0?<Shirt size={19}/>:<CloudSun size={19}/>}</span>{line}</p>)}</div><div className="weather-source"><span>{weather.stale?"Показан ранее загруженный прогноз. Обновление пока недоступно.":"Автообновление каждые 15 минут"}</span><span>Прогноз на {weather.time.replace("T"," ").slice(0,16)} · {weather.timezone}</span><a href={weather.source==="met-no"?"https://api.met.no/":"https://open-meteo.com/"} target="_blank" rel="noreferrer">Данные {weather.source==="met-no"?"MET Norway":"Open-Meteo"} ↗</a><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>{weather.source==="met-no"&&<span>Суточные значения собраны из прогноза по часам.{weather.feelsEstimated?" При отсутствии ощущаемой температуры используется температура воздуха.":""}</span>}</div></section><section className="recommendation surface"><div className="recommendation-heading"><div><div className="eyebrow">{demo?"На примере коллекции":"Из вашего гардероба"}</div><h2>{day===0?"Образ на сегодня":"Образ на день"}</h2></div><span className={`match-badge ${recommendation?.complete?"":"match-warning"}`}>{recommendation?.complete?<><Check size={14}/>По погоде</>:"Можно дополнить"}</span></div>{recommendation?.items.length?<><div className="recommendation-items">{recommendation.items.map(i=><button className="recommended-piece" key={i.id} onClick={()=>setEditor({item:i})}><Photo item={i}/><span>{i.name}</span></button>)}</div>{recommendation.missing.length>0&&<p className="recommendation-notice"><Info size={16}/>Не хватает вещей для этой погоды: {recommendation.missing.join(", ")}. Добавьте их или измените температурные отметки.</p>}{recommendation.warnings.map(w=><p className="recommendation-notice" key={w}><Info size={16}/>{w}</p>)}<div className="recommendation-actions"><button className="btn btn-primary" onClick={()=>setBuilder({name:day===0?"Образ на сегодня":"Образ на день",itemIds:recommendation.items.map(i=>i.id)})}><Layers/>Открыть в конструкторе</button><button className="btn" onClick={()=>setVariation(v=>v+1)}><RefreshCw/>Другой вариант</button></div><p className="field-help">Варианты зависят от состава гардероба. Подбор учитывает ваши отметки, а не материал на фото.</p></>:<Empty><EmptyHeader><Hanger size={35}/><EmptyTitle>Нужны вещи для этой погоды</EmptyTitle><EmptyDescription>Добавьте подходящие вещи и укажите комфортный диапазон температуры.</EmptyDescription></EmptyHeader><EmptyContent><button className="btn btn-primary" onClick={addOwn}><Plus/>Добавить вещь</button></EmptyContent></Empty>}</section></div>{visibleOutfits.length>0&&<section className="suitable-outfits"><div className="collection-heading"><h2>Подходящие сохранённые образы</h2></div>{suitableOutfits.length?<div className="outfits-grid">{suitableOutfits.map(o=><button className="saved-outfit surface saved-outfit-weather" key={o.id} onClick={()=>setBuilder(o)}><OutfitCollage items={outfitFrom(o)}/><div className="saved-outfit-info"><h2>{o.name}</h2><ArrowUpRight size={20}/></div></button>)}</div>:<p className="muted">Пока нет сохранённых образов с подходящей температурой. Сохраните сочетание из конструктора.</p>}</section>}</>:!weatherError&&<div className="forecast-grid">{[1,2,3,4,5].map(i=><Skeleton key={i} className="h-44 rounded-xl"/>)}</div>}</TabsContent>
- <footer className="app-footer"><div className="footer-brand">форма</div><span>{items.length} своих вещей · {outfits.length} образов</span></footer></main>
- {editor&&<ItemEditor key={editor.item?.id??"new"} item={editor.item} gender={gender} onClose={()=>setEditor(null)} onSaved={savedItem} onDelete={item=>{setEditor(null);setDeleteError("");setDeleting({type:"item",id:item.id,name:item.name})}} onAddOwn={()=>setEditor({item:null})}/>}{builder&&<OutfitEditor items={visibleItems} initial={builder} demo={demo} gender={gender} onClose={()=>setBuilder(null)} onSaved={savedOutfit} onAddOwn={addOwn}/>}{cityOpen&&<CityPicker onClose={()=>setCityOpen(false)} onSelect={changeCity}/>}
- {loaded&&profileOpen&&<ProfileEditor key={profile?.name??"new-profile"} profile={profile} initialName={initialName} onClose={()=>setProfileOpen(false)} onSaved={savedProfile}/> }<AlertDialog open={!!deleting} onOpenChange={v=>{if(!v&&!deleteBusy)setDeleting(null)}}><AlertDialogContent><AlertDialogTitle>Удалить «{deleting?.name}»?</AlertDialogTitle><AlertDialogDescription>{deleting?.type==="item"?"Фото будет удалено. Сохранённые образы останутся, но этой вещи в них больше не будет.":"Вещи из образа останутся в гардеробе."}</AlertDialogDescription>{deleteError&&<p role="alert" className="form-error">{deleteError}</p>}<AlertDialogFooter><AlertDialogCancel disabled={deleteBusy}>Отмена</AlertDialogCancel><AlertDialogAction className="delete-confirm" disabled={deleteBusy} onClick={e=>{e.preventDefault();remove()}}>{deleteBusy?"Удаляем…":"Удалить"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></Tabs>
+type WardrobeResponse = {
+  items: Item[]; outfits: Outfit[]; city: City | null; profile: Profile | null;
+};
+type Deleting = { type: "item" | "outfit"; id: string; name: string };
+
+export default function WardrobeApp({ initialName }: { initialName?: string }) {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const gender = profile?.gender ?? "unspecified";
+  const [tab, setTab] = useState("wardrobe");
+  const [items, setItems] = useState<Item[]>([]);
+  const [outfits, setOutfits] = useState<Outfit[]>([]);
+  const [samples, setSamples] = useState<Outfit[]>(demoOutfits);
+  const [demo, setDemo] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [city, setCity] = useState<City>(defaultCity);
+  const [cityOpen, setCityOpen] = useState(false);
+  const [category, setCategory] = useState("all");
+  const [editor, setEditor] = useState<{ item: Item | null } | null>(null);
+  const [builder, setBuilder] = useState<Partial<Outfit> | null>(null);
+  const [deleting, setDeleting] = useState<Deleting | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [variation, setVariation] = useState(0);
+  const loadController = useRef<AbortController | null>(null);
+
+  const dialogOpen = !!(editor || builder || deleting || cityOpen || profileOpen);
+  const telegramBack = useCallback(() => {
+    if (dialogOpen) {
+      // Use the dialog's Escape handling to preserve focus and busy guards.
+      (document.activeElement ?? document).dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+      );
+    } else setTab("wardrobe");
+  }, [dialogOpen]);
+  useTelegramNavigation(dialogOpen || tab !== "wardrobe" ? telegramBack : null,
+    !!(editor || builder || profileOpen));
+
+  const { weather, weatherBusy, weatherError, day, setDay, refreshWeather } = useWeather(city);
+  const load = useCallback(async () => {
+    loadController.current?.abort();
+    const controller = new AbortController();
+    loadController.current = controller;
+    try {
+      const data = await api<WardrobeResponse>("/api/wardrobe", { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      setProfile(data.profile);
+      setProfileOpen(!data.profile);
+      setItems(data.items);
+      setOutfits(data.outfits);
+      setDemo(data.items.length === 0);
+      if (data.city) setCity(data.city);
+      setLoaded(true);
+    } catch (error) {
+      if (!controller.signal.aborted) setLoadError((error as Error).message);
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) void load(); });
+    return () => { active = false; loadController.current?.abort(); };
+  }, [load]);
+  function retryLoad() {
+    setLoading(true);
+    setLoadError("");
+    void load();
+  }
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [tab]);
+
+  const {
+    visibleItems, visibleOutfits, outfitItems, selectedWeather, recommendation, suitableOutfits,
+  } = useWardrobeView(demo ? demoItems : items, demo ? samples : outfits,
+    gender, weather, day, variation);
+
+  function addOwn() { setBuilder(null); setEditor({ item: null }); }
+  function savedProfile(next: Profile) {
+    setProfile(next);
+    setCategory("all");
+    setVariation(0);
+    setEditor(null);
+    setBuilder(null);
+  }
+  function savedItem(item: Item) {
+    setItems(old => old.some(existing => existing.id === item.id)
+      ? old.map(existing => existing.id === item.id ? item : existing) : [item, ...old]);
+    setDemo(false);
+    setCategory("all");
+  }
+  function savedOutfit(outfit: Outfit) {
+    const setter = demo ? setSamples : setOutfits;
+    setter(old => old.some(existing => existing.id === outfit.id)
+      ? old.map(existing => existing.id === outfit.id ? outfit : existing) : [outfit, ...old]);
+    setTab("outfits");
+  }
+  async function changeCity(next: City) {
+    await api("/api/settings", { method: "POST", body: JSON.stringify(next) });
+    setCity(next);
+    setVariation(0);
+    toast.success(`Погода: ${next.name}`);
+  }
+  function confirmDelete(type: Deleting["type"], value: Item | Outfit) {
+    setDeleteError("");
+    setDeleting({ type, id: value.id, name: value.name });
+  }
+  async function remove() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      await api(deleting.type === "item" ? "/api/wardrobe" : "/api/outfits", {
+        method: "DELETE", body: JSON.stringify({ id: deleting.id }),
+      });
+      if (deleting.type === "item") setItems(old => old.filter(item => item.id !== deleting.id));
+      else setOutfits(old => old.filter(outfit => outfit.id !== deleting.id));
+      toast.success(deleting.type === "item" ? "Вещь удалена" : "Образ удалён");
+      setDeleting(null);
+    } catch (error) { setDeleteError((error as Error).message); }
+    finally { setDeleteBusy(false); }
+  }
+
+  return <Tabs value={tab} onValueChange={setTab} className="app-tabs">
+    <Toaster position="top-center" toastOptions={{ style: { fontFamily: "Arial, Helvetica, sans-serif", fontSize: 14 } }}/>
+    <header className="app-header">
+      <button className="brand" aria-label="Форма — открыть гардероб" onClick={() => setTab("wardrobe")}>форма</button>
+      <button className="header-city" aria-label={`Выбрать город. Сейчас: ${city.name}`}
+        onClick={() => setCityOpen(true)}>
+        <MapPin size={20}/><span>{city.name}</span><ChevronDown size={14}/>
+      </button>
+      <button className="header-profile" aria-label="Открыть профиль"
+        onClick={() => setProfileOpen(true)} disabled={!loaded}>
+        <UserRound size={20}/><span>{profile?.name ?? "Профиль"}</span>
+      </button>
+    </header>
+    <nav className="app-navigation" aria-label="Основная навигация">
+      <TabsList className="nav-tabs" aria-label="Разделы приложения">
+        <TabsTrigger value="wardrobe"><Hanger/><span>Гардероб</span></TabsTrigger>
+        <TabsTrigger value="outfits"><Layers/><span>Образы</span></TabsTrigger>
+        <TabsTrigger value="weather"><CloudSun/><span>Погода</span></TabsTrigger>
+      </TabsList>
+    </nav>
+    <main className="main">
+      {tab === "wardrobe" && profile && <p className="profile-greeting">Привет, {profile.name}!</p>}
+      <div className="title-row">
+        <div>
+          <h1 className="page-title">{tab === "wardrobe" ? "мой гардероб" : tab === "outfits" ? "мои образы" : "по погоде"}</h1>
+          <p className="page-subtitle">{tab === "wardrobe"
+            ? demo ? "Здесь начнётся ваша коллекция" : `${visibleItems.length} вещей в коллекции`
+            : tab === "outfits" ? "Сочетания на каждый день" : "Что надеть сегодня и в ближайшие дни"}</p>
+        </div>
+        {tab !== "weather" && <button className="btn btn-primary title-action"
+          aria-label={tab === "outfits" ? "Создать образ" : "Добавить вещь"}
+          onClick={() => tab === "outfits" ? setBuilder({}) : addOwn()} disabled={!loaded}>
+          <Plus/><span>{tab === "outfits" ? "Создать образ" : "Добавить вещь"}</span>
+        </button>}
+      </div>
+      {loadError && <div className="error-panel" role="alert">
+        <Info/><div><strong>Не удалось открыть гардероб</strong><p>{loadError}</p></div>
+        <button className="btn" onClick={retryLoad}>Повторить</button>
+      </div>}
+      <WardrobeSection items={visibleItems} city={city} weather={weather}
+        weatherBusy={weatherBusy} weatherError={weatherError} demo={demo}
+        loading={loading} loadError={loadError} loaded={loaded} gender={gender}
+        category={category} onCategoryChange={setCategory}
+        onWeatherOpen={() => setTab("weather")} onWeatherRetry={refreshWeather}
+        onAddOwn={addOwn} onEdit={item => setEditor({ item })} onBuild={setBuilder}
+        onDelete={item => confirmDelete("item", item)}/>
+      <TabsContent value="outfits"><OutfitsSection items={visibleItems}
+        outfits={visibleOutfits} outfitItems={outfitItems} gender={gender}
+        demo={demo} loading={loading} error={loadError} onOpen={setBuilder}
+        onAddOwn={addOwn} onDelete={outfit => confirmDelete("outfit", outfit)}/></TabsContent>
+      <WeatherSection city={city} weather={weather} weatherBusy={weatherBusy}
+        weatherError={weatherError} day={day} selectedWeather={selectedWeather}
+        recommendation={recommendation} suitableOutfits={suitableOutfits}
+        visibleOutfits={visibleOutfits} outfitItems={outfitItems} gender={gender}
+        demo={demo} onAddOwn={addOwn} onCityOpen={() => setCityOpen(true)}
+        onRefresh={refreshWeather} onDayChange={next => { setDay(next); setVariation(0); }}
+        onNextVariation={() => setVariation(value => value + 1)}
+        onEdit={item => setEditor({ item })} onBuild={setBuilder}/>
+      <footer className="app-footer">
+        <div className="footer-brand">форма</div>
+        <span>{items.length} своих вещей · {outfits.length} образов</span>
+      </footer>
+    </main>
+
+    {editor && <ItemEditor key={editor.item?.id ?? "new"} item={editor.item}
+      gender={gender} onClose={() => setEditor(null)} onSaved={savedItem}
+      onDelete={item => { setEditor(null); confirmDelete("item", item); }}
+      onAddOwn={() => setEditor({ item: null })}/>}
+    {builder && <OutfitEditor items={visibleItems} initial={builder} demo={demo}
+      gender={gender} onClose={() => setBuilder(null)} onSaved={savedOutfit} onAddOwn={addOwn}/>}
+    {cityOpen && <CityPicker onClose={() => setCityOpen(false)} onSelect={changeCity}/>}
+    {loaded && profileOpen && <ProfileEditor key={profile?.name ?? "new-profile"}
+      profile={profile} initialName={initialName} onClose={() => setProfileOpen(false)}
+      onSaved={savedProfile}/>}
+    <AlertDialog open={!!deleting} onOpenChange={open => { if (!open && !deleteBusy) setDeleting(null); }}>
+      <AlertDialogContent>
+        <AlertDialogTitle>Удалить «{deleting?.name}»?</AlertDialogTitle>
+        <AlertDialogDescription>{deleting?.type === "item"
+          ? "Фото будет удалено. Сохранённые образы останутся, но этой вещи в них больше не будет."
+          : "Вещи из образа останутся в гардеробе."}</AlertDialogDescription>
+        {deleteError && <p role="alert" className="form-error">{deleteError}</p>}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleteBusy}>Отмена</AlertDialogCancel>
+          <AlertDialogAction className="delete-confirm" disabled={deleteBusy}
+            onClick={event => { event.preventDefault(); void remove(); }}>
+            {deleteBusy ? "Удаляем…" : "Удалить"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </Tabs>;
 }

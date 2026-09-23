@@ -43,6 +43,13 @@ export async function mockWardrobe(page, {failWeather = false, failSave = false,
       return send({profile: state.profile});
     }
     if (pathname === "/api/wardrobe" && method === "GET") return send(state);
+    if (pathname === "/api/wardrobe" && method === "PATCH") {
+      const data = request.postDataJSON();
+      const item = state.items.find(item => item.id === data.id);
+      if (!item) return send({error: "Вещь не найдена."}, 404);
+      Object.assign(item, data);
+      return send({ok: true});
+    }
     if (pathname === "/api/weather" && method === "GET") {
       if (failWeather) { failWeather = false; return send({error: "Тестовая ошибка погоды"}, 503); }
       return send(weather);

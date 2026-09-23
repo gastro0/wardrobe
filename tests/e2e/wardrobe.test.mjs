@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {after, before, test} from "node:test";
 import {launchBrowser, mockWardrobe, mockTelegram} from "./fixture.mjs";
-import {WardrobePage, OutfitsPage, OutfitEditor, WeatherPage, TelegramPage} from "./pages.mjs";
+import {WardrobePage, ItemEditorPage, OutfitsPage, OutfitEditor, WeatherPage, TelegramPage} from "./pages.mjs";
 
 const baseURL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8787";
 let browser;
@@ -63,6 +63,18 @@ for (const viewport of [{width: 1280, height: 900}, {width: 390, height: 844}]) 
     await outfits.card("Без сумки").waitFor({state: "detached"});
   });
 }
+
+test("Clothing edits update the collection and persist after reload", async t => {
+  const {page, state, wardrobe} = await session(t, {width: 390, height: 844});
+  const editor = new ItemEditorPage(page);
+  await editor.open("Молочная футболка");
+  assert.equal(await editor.name.inputValue(), "Молочная футболка");
+  await editor.saveAs("Любимая футболка");
+  await wardrobe.item("Любимая футболка").waitFor();
+  assert.equal(state.items.find(item => item.id === "tee").name, "Любимая футболка");
+  await page.reload();
+  await wardrobe.item("Любимая футболка").waitFor();
+});
 
 test("Weather and saving recover after errors", async t => {
   const {page, outfits, editor, weather} = await session(t, {width: 1280, height: 900}, {failWeather: true, failSave: true});

@@ -1,45 +1,282 @@
 "use client";
-import {useEffect,useRef,useState} from "react";
-import {Upload,ImagePlus,LoaderCircle,CloudRain,Wind,Check,X,Trash2} from "lucide-react";
-import {Dialog,DialogContent,DialogTitle,DialogDescription,DialogClose} from "@/components/ui/dialog";
-import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue} from "@/components/ui/select";
-import {Checkbox} from "@/components/ui/checkbox";
-import {availableCategories,temperatureSuggestion,normalizeCategory,normalizeTags,MAX_ITEM_TAGS,MAX_TAG_LENGTH,type Gender,type Category,type Item} from "@/lib/wardrobe";
+
+import { useEffect, useRef, useState } from "react";
+import { Check, CloudRain, ImagePlus, LoaderCircle, Trash2, Upload, Wind, X } from "lucide-react";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  availableCategories, MAX_ITEM_TAGS, MAX_TAG_LENGTH, normalizeCategory,
+  normalizeTags, temperatureSuggestion, type Category, type Gender, type Item,
+} from "@/lib/wardrobe";
+import { api } from "@/lib/client";
+import { removeClothingBackground } from "@/lib/clothing-photo";
+import { toast } from "sonner";
 import ItemTags from "./item-tags";
 import ItemTemperature from "./item-temperature";
-import {api} from "@/lib/client";
-import {toast} from "sonner";
-import {removeClothingBackground} from "@/lib/clothing-photo";
 
-export default function ItemEditor({item,gender,onClose,onSaved,onAddOwn,onDelete}:{item:Item|null;gender:Gender;onClose:()=>void;onSaved:(item:Item)=>void;onAddOwn:()=>void;onDelete:(item:Item)=>void}){
-const [tags,setTags]=useState<string[]>(item?.tags??[]);const [tagDraft,setTagDraft]=useState("");const demo=!!item?.id.startsWith("demo");const [name,setName]=useState(item?.name??"");const [category,setCategory]=useState<Category>(item?normalizeCategory(item.category):"tshirt");const [color,setColor]=useState(item?.color??"Не указан");const [min,setMin]=useState(String(item?.minTemp??18));const [max,setMax]=useState(String(item?.maxTemp??35));const [rain,setRain]=useState(item?.rainproof??false);const [wind,setWind]=useState(item?.windproof??false);const [file,setFile]=useState<File|null>(null);const [preview,setPreview]=useState(item?.image??"");const [busy,setBusy]=useState(false);const [error,setError]=useState("");const [drag,setDrag]=useState(false);const input=useRef<HTMLInputElement>(null);const photoRequest=useRef(0);const [photoSource,setPhotoSource]=useState<File|null>(null);const [processedPhoto,setProcessedPhoto]=useState<File|null>(null);const [processing,setProcessing]=useState(false);const [photoStatus,setPhotoStatus]=useState("");
-useEffect(()=>()=>{if(preview.startsWith("blob:"))URL.revokeObjectURL(preview)},[preview]);
-useEffect(()=>()=>{photoRequest.current++},[]);
-const [autoTemperature,setAutoTemperature]=useState(()=>{
-  if(!item)return true;
-  const initial=temperatureSuggestion(item.category,item.tags??[]).range;
-  return !!initial&&initial[0]===item.minTemp&&initial[1]===item.maxTemp;
-});
-const temperature=temperatureSuggestion(category,normalizeTags([...tags,...tagDraft.split(",")]));
-const effectiveMin=autoTemperature&&temperature.range?String(temperature.range[0]):min;
-const effectiveMax=autoTemperature&&temperature.range?String(temperature.range[1]):max;
-function changeTemperature(nextMin:string,nextMax:string){setMin(nextMin);setMax(nextMax);setAutoTemperature(false)}
-function toggleAutoTemperature(value:boolean){setMin(effectiveMin);setMax(effectiveMax);setAutoTemperature(value)}
-async function choose(f?:File){
- if(!f||busy||processing)return;
- if(!["image/jpeg","image/png","image/webp"].includes(f.type)){setError("Выберите JPG, PNG или WebP. Фото HEIC сначала сохраните как JPG.");return}
- if(!f.size||f.size>8*1024*1024){setError("Выберите фотографию до 8 МБ.");return}
- const request=++photoRequest.current;
- setError("");setFile(null);setProcessedPhoto(null);setPhotoSource(f);setProcessing(true);setPhotoStatus("Подготавливаем фото…");setPreview(URL.createObjectURL(f));
- if(!name)setName(f.name.replace(/\.[^.]+$/,"").replace(/[_-]/g," ").slice(0,100));
- try{
-  const processed=await removeClothingBackground(f,message=>{if(request===photoRequest.current)setPhotoStatus(message)});
-  if(request!==photoRequest.current)return;
-  setProcessedPhoto(processed);setFile(processed);setPreview(URL.createObjectURL(processed));
- }catch(error){
-  if(request===photoRequest.current){console.error("Photo background removal failed",error);setFile(f);setError("Не удалось удалить фон. Можно сохранить оригинал или повторить обработку.")}
- }finally{if(request===photoRequest.current)setProcessing(false)}
+type Props = {
+  item: Item | null;
+  gender: Gender;
+  onClose: () => void;
+  onSaved: (item: Item) => void;
+  onAddOwn: () => void;
+  onDelete: (item: Item) => void;
+};
+
+const colors = [
+  "Не указан", "Белый", "Молочный", "Бежевый", "Коричневый", "Чёрный",
+  "Серый", "Голубой", "Синий", "Зелёный", "Оливковый", "Красный",
+  "Розовый", "Жёлтый", "Разноцветный",
+];
+
+export default function ItemEditor({ item, gender, onClose, onSaved, onAddOwn, onDelete }: Props) {
+  const demo = !!item?.id.startsWith("demo");
+  const [tags, setTags] = useState<string[]>(item?.tags ?? []);
+  const [tagDraft, setTagDraft] = useState("");
+  const [name, setName] = useState(item?.name ?? "");
+  const [category, setCategory] = useState<Category>(item ? normalizeCategory(item.category) : "tshirt");
+  const [color, setColor] = useState(item?.color ?? "Не указан");
+  const [min, setMin] = useState(String(item?.minTemp ?? 18));
+  const [max, setMax] = useState(String(item?.maxTemp ?? 35));
+  const [rain, setRain] = useState(item?.rainproof ?? false);
+  const [wind, setWind] = useState(item?.windproof ?? false);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState(item?.image ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [drag, setDrag] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const photoRequest = useRef(0);
+  const [photoSource, setPhotoSource] = useState<File | null>(null);
+  const [processedPhoto, setProcessedPhoto] = useState<File | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [photoStatus, setPhotoStatus] = useState("");
+
+  useEffect(() => () => { if (preview.startsWith("blob:")) URL.revokeObjectURL(preview); }, [preview]);
+  useEffect(() => () => { photoRequest.current++; }, []);
+
+  const [autoTemperature, setAutoTemperature] = useState(() => {
+    if (!item) return true;
+    const initial = temperatureSuggestion(item.category, item.tags ?? []).range;
+    return !!initial && initial[0] === item.minTemp && initial[1] === item.maxTemp;
+  });
+  const temperature = temperatureSuggestion(category, normalizeTags([...tags, ...tagDraft.split(",")]));
+  const effectiveMin = autoTemperature && temperature.range ? String(temperature.range[0]) : min;
+  const effectiveMax = autoTemperature && temperature.range ? String(temperature.range[1]) : max;
+
+  function changeTemperature(nextMin: string, nextMax: string) {
+    setMin(nextMin);
+    setMax(nextMax);
+    setAutoTemperature(false);
+  }
+  function toggleAutoTemperature(value: boolean) {
+    setMin(effectiveMin);
+    setMax(effectiveMax);
+    setAutoTemperature(value);
+  }
+
+  async function choose(photo?: File) {
+    if (!photo || busy || processing) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(photo.type)) {
+      setError("Выберите JPG, PNG или WebP. Фото HEIC сначала сохраните как JPG.");
+      return;
+    }
+    if (!photo.size || photo.size > 8 * 1024 * 1024) {
+      setError("Выберите фотографию до 8 МБ.");
+      return;
+    }
+    const request = ++photoRequest.current;
+    setError("");
+    setFile(null);
+    setProcessedPhoto(null);
+    setPhotoSource(photo);
+    setProcessing(true);
+    setPhotoStatus("Подготавливаем фото…");
+    setPreview(URL.createObjectURL(photo));
+    if (!name) setName(photo.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ").slice(0, 100));
+    try {
+      const processed = await removeClothingBackground(photo, message => {
+        if (request === photoRequest.current) setPhotoStatus(message);
+      });
+      if (request !== photoRequest.current) return;
+      setProcessedPhoto(processed);
+      setFile(processed);
+      setPreview(URL.createObjectURL(processed));
+    } catch (error) {
+      if (request === photoRequest.current) {
+        console.error("Photo background removal failed", error);
+        setFile(photo);
+        setError("Не удалось удалить фон. Можно сохранить оригинал или повторить обработку.");
+      }
+    } finally {
+      if (request === photoRequest.current) setProcessing(false);
+    }
+  }
+
+  function selectPhoto(photo: File) {
+    if (busy || processing) return;
+    setFile(photo);
+    setPreview(URL.createObjectURL(photo));
+    setError("");
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (demo || processing) return;
+    const savedTags = normalizeTags([...tags, ...tagDraft.split(",")]);
+    if (savedTags.length > MAX_ITEM_TAGS || savedTags.some(tag => tag.length > MAX_TAG_LENGTH)) {
+      setError("Не больше 8 тегов, до 40 символов каждый.");
+      return;
+    }
+    if (autoTemperature && temperature.source === "conflict") {
+      setError("У выбранных типов разные температуры. Оставьте один тип или укажите диапазон вручную.");
+      return;
+    }
+    if (!name.trim()) { setError("Как называется эта вещь?"); return; }
+    if (!item && !file) {
+      setError(photoSource ? "Дождитесь обработки или выберите оригинал." : "Добавьте фотографию вещи.");
+      return;
+    }
+    if (effectiveMin === "" || effectiveMax === "" || !Number.isFinite(Number(effectiveMin)) ||
+      !Number.isFinite(Number(effectiveMax)) || Number(effectiveMin) > Number(effectiveMax)) {
+      setError("Проверьте диапазон температуры: от меньшего к большему.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    const data = {
+      name: name.trim(), category, tags: savedTags, color,
+      minTemp: Number(effectiveMin), maxTemp: Number(effectiveMax),
+      rainproof: rain, windproof: wind,
+    };
+    try {
+      let saved: Item;
+      if (item) {
+        await api("/api/wardrobe", { method: "PATCH", body: JSON.stringify({ id: item.id, ...data }) });
+        saved = { ...item, ...data };
+      } else {
+        const form = new FormData();
+        form.append("data", JSON.stringify(data));
+        form.append("photo", file!);
+        const response = await api<{ item: Item }>("/api/wardrobe", { method: "POST", body: form });
+        saved = response.item;
+      }
+      onSaved(saved);
+      toast.success(item ? "Изменения сохранены" : "Вещь добавлена в гардероб");
+      onClose();
+    } catch (error) { setError((error as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
+    <DialogContent className="form-dialog" showCloseButton={false}>
+      <DialogClose aria-label="Закрыть" className="dialog-x" disabled={busy}><X size={20}/></DialogClose>
+      <DialogTitle className="dialog-heading">{demo ? "Вещь из примера" : item ? "Редактировать вещь" : "Новая вещь"}</DialogTitle>
+      <DialogDescription>{demo
+        ? "Пример показывает, как можно описать свою вещь."
+        : "Добавьте фото и подскажите, в какую погоду вам в ней комфортно."}</DialogDescription>
+      <form onSubmit={save} className="item-form">
+        <div aria-busy={processing}
+          className={`upload-box ${drag ? "drag-active" : ""} ${file && file === processedPhoto && !processing ? "photo-ready" : ""}`}
+          onDragOver={event => { event.preventDefault(); if (!item && !busy && !processing) setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={event => {
+            event.preventDefault();
+            setDrag(false);
+            if (!item && !busy && !processing) void choose(event.dataTransfer.files[0]);
+          }}>
+          {preview
+            ? <img src={preview} alt={name || "Предпросмотр фотографии"}/>
+            : <div className="upload-placeholder">
+              <ImagePlus size={34}/><strong>Фотография вещи</strong>
+              <span>Выберите фото вещи из галереи</span>
+              <small>JPG, PNG, WebP · до 8 МБ</small>
+              <small>Фон удалится автоматически</small>
+            </div>}
+          {!item && <div className={`photo-controls ${preview ? "photo-controls-preview" : ""}`}>
+            <button type="button" className={`btn ${preview ? "" : "btn-primary"}`}
+              onClick={() => input.current?.click()} disabled={busy || processing}>
+              <Upload/>{preview ? "Другое фото" : "Выбрать фото"}
+            </button>
+            {photoSource && !processing && <>
+              <div className="photo-version-switch" role="group" aria-label="Вариант фотографии">
+                <button type="button" className={file === photoSource ? "btn btn-primary" : "btn"}
+                  aria-pressed={file === photoSource} onClick={() => selectPhoto(photoSource)}
+                  disabled={busy}>Оригинал</button>
+                {processedPhoto
+                  ? <button type="button" className={file === processedPhoto ? "btn btn-primary" : "btn"}
+                    aria-pressed={file === processedPhoto} onClick={() => selectPhoto(processedPhoto)}
+                    disabled={busy}>Без фона</button>
+                  : <button type="button" className="btn" onClick={() => void choose(photoSource)}
+                    disabled={busy}>Удалить фон</button>}
+              </div>
+              <p className="photo-result-help" role="status">{file === photoSource
+                ? "Сохранится исходное фото."
+                : "Если исчезла часть вещи, выберите «Оригинал»."}</p>
+            </>}
+          </div>}
+          {processing && <div className="photo-processing" role="status" aria-live="polite">
+            <LoaderCircle className="spin" size={28}/><strong>{photoStatus}</strong>
+            <span>Первая обработка может занять немного больше времени.</span>
+          </div>}
+          <input ref={input} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp"
+            aria-label="Загрузить фотографию" onChange={event => {
+              void choose(event.target.files?.[0]);
+              event.target.value = "";
+            }} disabled={busy || processing}/>
+        </div>
+        <div className="form-fields">
+          <label className="field">Название
+            <input value={name} onChange={event => setName(event.target.value)} maxLength={100}
+              placeholder="Например, любимая белая футболка" disabled={demo || busy} required/>
+          </label>
+          <div className="form-two">
+            <label className="field">Категория
+              <Select value={category} onValueChange={value => setCategory(value as Category)} disabled={demo || busy}>
+                <SelectTrigger className="field-select" aria-label="Категория вещи"><SelectValue/></SelectTrigger>
+                <SelectContent>{availableCategories(gender).map(([key, label]) =>
+                  <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+            <label className="field">Цвет
+              <Select value={color} onValueChange={setColor} disabled={demo || busy}>
+                <SelectTrigger className="field-select" aria-label="Цвет вещи"><SelectValue/></SelectTrigger>
+                <SelectContent>{colors.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+          </div>
+          <ItemTags category={category} tags={tags} draft={tagDraft} onDraft={setTagDraft}
+            onChange={setTags} disabled={demo || busy}/>
+          <ItemTemperature auto={autoTemperature} onAuto={toggleAutoTemperature}
+            min={effectiveMin} max={effectiveMax} onChange={changeTemperature}
+            suggestion={temperature} disabled={demo || busy}/>
+          <div className="weather-checkboxes">
+            <label><Checkbox checked={rain} onCheckedChange={value => setRain(value === true)}
+              disabled={demo || busy}/><CloudRain size={17}/>Защита от дождя</label>
+            <label><Checkbox checked={wind} onCheckedChange={value => setWind(value === true)}
+              disabled={demo || busy}/><Wind size={17}/>Защита от ветра</label>
+          </div>
+        </div>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <div className="form-footer">
+          {demo
+            ? <button type="button" className="btn btn-primary" onClick={onAddOwn}>
+              <ImagePlus/>Добавить свою вещь
+            </button>
+            : <>
+              {item && <button type="button" className="icon-button editor-delete" title="Удалить вещь"
+                aria-label={`Удалить ${item.name}`} onClick={() => onDelete(item)}
+                disabled={busy}><Trash2 size={20}/></button>}
+              <button type="button" className="btn" onClick={onClose} disabled={busy}>Отмена</button>
+              <button className="btn btn-primary" disabled={busy || processing || (!item && !file)}>
+                {busy ? <LoaderCircle className="spin"/> : <Check/>}
+                {busy ? "Сохраняем…" : item ? "Сохранить изменения" : "Добавить в гардероб"}
+              </button>
+            </>}
+        </div>
+      </form>
+    </DialogContent>
+  </Dialog>;
 }
-function selectPhoto(photo:File){if(busy||processing)return;setFile(photo);setPreview(URL.createObjectURL(photo));setError("")}
-async function save(e:React.FormEvent){e.preventDefault();if(demo||processing)return;const savedTags=normalizeTags([...tags,...tagDraft.split(",")]);if(savedTags.length>MAX_ITEM_TAGS||savedTags.some(tag=>tag.length>MAX_TAG_LENGTH)){setError("Не больше 8 тегов, до 40 символов каждый.");return}if(autoTemperature&&temperature.source==="conflict"){setError("У выбранных типов разные температуры. Оставьте один тип или укажите диапазон вручную.");return}if(!name.trim()){setError("Как называется эта вещь?");return}if(!item&&!file){setError(photoSource?"Дождитесь обработки или выберите оригинал.":"Добавьте фотографию вещи.");return}if(effectiveMin===""||effectiveMax===""||!Number.isFinite(Number(effectiveMin))||!Number.isFinite(Number(effectiveMax))||Number(effectiveMin)>Number(effectiveMax)){setError("Проверьте диапазон температуры: от меньшего к большему.");return}setBusy(true);setError("");const data={name:name.trim(),category,tags:savedTags,color,minTemp:Number(effectiveMin),maxTemp:Number(effectiveMax),rainproof:rain,windproof:wind};try{let saved:Item;if(item){await api("/api/wardrobe",{method:"PATCH",body:JSON.stringify({id:item.id,...data})});saved={...item,...data}}else{const form=new FormData();form.append("data",JSON.stringify(data));form.append("photo",file!);const response=await api<{item:Item}>("/api/wardrobe",{method:"POST",body:form});saved=response.item}onSaved(saved);toast.success(item?"Изменения сохранены":"Вещь добавлена в гардероб");onClose()}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
-return <Dialog open onOpenChange={open=>{if(!open&&!busy)onClose()}}><DialogContent className="form-dialog" showCloseButton={false}><DialogClose aria-label="Закрыть" className="dialog-x" disabled={busy}><X size={20}/></DialogClose><DialogTitle className="dialog-heading">{demo?"Вещь из примера":item?"Редактировать вещь":"Новая вещь"}</DialogTitle><DialogDescription>{demo?"Пример показывает, как можно описать свою вещь.":"Добавьте фото и подскажите, в какую погоду вам в ней комфортно."}</DialogDescription><form onSubmit={save} className="item-form"><div aria-busy={processing} className={`upload-box ${drag?"drag-active":""} ${file&&file===processedPhoto&&!processing?"photo-ready":""}`} onDragOver={e=>{e.preventDefault();if(!item&&!busy&&!processing)setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);if(!item&&!busy&&!processing)choose(e.dataTransfer.files[0])}}>{preview?<img src={preview} alt={name||"Предпросмотр фотографии"}/>:<div className="upload-placeholder"><ImagePlus size={34}/><strong>Фотография вещи</strong><span>Выберите фото вещи из галереи</span><small>JPG, PNG, WebP · до 8 МБ</small><small>Фон удалится автоматически</small></div>}{!item&&<div className={`photo-controls ${preview?"photo-controls-preview":""}`}><button type="button" className={`btn ${preview?"":"btn-primary"}`} onClick={()=>input.current?.click()} disabled={busy||processing}><Upload/>{preview?"Другое фото":"Выбрать фото"}</button>{photoSource&&!processing&&<><div className="photo-version-switch" role="group" aria-label="Вариант фотографии"><button type="button" className={file===photoSource?"btn btn-primary":"btn"} aria-pressed={file===photoSource} onClick={()=>selectPhoto(photoSource)} disabled={busy}>Оригинал</button>{processedPhoto?<button type="button" className={file===processedPhoto?"btn btn-primary":"btn"} aria-pressed={file===processedPhoto} onClick={()=>selectPhoto(processedPhoto)} disabled={busy}>Без фона</button>:<button type="button" className="btn" onClick={()=>choose(photoSource)} disabled={busy}>Удалить фон</button>}</div><p className="photo-result-help" role="status">{file===photoSource?"Сохранится исходное фото.":"Если исчезла часть вещи, выберите «Оригинал»."}</p></>}</div>}{processing&&<div className="photo-processing" role="status" aria-live="polite"><LoaderCircle className="spin" size={28}/><strong>{photoStatus}</strong><span>Первая обработка может занять немного больше времени.</span></div>}<input ref={input} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Загрузить фотографию" onChange={e=>{choose(e.target.files?.[0]);e.target.value=""}} disabled={busy||processing}/></div><div className="form-fields"><label className="field">Название<input value={name} onChange={e=>setName(e.target.value)} maxLength={100} placeholder="Например, любимая белая футболка" disabled={demo||busy} required/></label><div className="form-two"><label className="field">Категория<Select value={category} onValueChange={v=>setCategory(v as Category)} disabled={demo||busy}><SelectTrigger className="field-select" aria-label="Категория вещи"><SelectValue/></SelectTrigger><SelectContent>{availableCategories(gender).map(([key,name])=><SelectItem key={key} value={key}>{name}</SelectItem>)}</SelectContent></Select></label><label className="field">Цвет<Select value={color} onValueChange={setColor} disabled={demo||busy}><SelectTrigger className="field-select" aria-label="Цвет вещи"><SelectValue/></SelectTrigger><SelectContent>{["Не указан","Белый","Молочный","Бежевый","Коричневый","Чёрный","Серый","Голубой","Синий","Зелёный","Оливковый","Красный","Розовый","Жёлтый","Разноцветный"].map(c=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></label></div><ItemTags category={category} tags={tags} draft={tagDraft} onDraft={setTagDraft} onChange={setTags} disabled={demo||busy}/><ItemTemperature auto={autoTemperature} onAuto={toggleAutoTemperature} min={effectiveMin} max={effectiveMax} onChange={changeTemperature} suggestion={temperature} disabled={demo||busy}/><div className="weather-checkboxes"><label><Checkbox checked={rain} onCheckedChange={v=>setRain(v===true)} disabled={demo||busy}/><CloudRain size={17}/>Защита от дождя</label><label><Checkbox checked={wind} onCheckedChange={v=>setWind(v===true)} disabled={demo||busy}/><Wind size={17}/>Защита от ветра</label></div></div>{error&&<p className="form-error" role="alert">{error}</p>}<div className="form-footer">{demo?<button type="button" className="btn btn-primary" onClick={onAddOwn}><ImagePlus/>Добавить свою вещь</button>:<>{item&&<button type="button" className="icon-button editor-delete" title="Удалить вещь" aria-label={`Удалить ${item.name}`} onClick={()=>onDelete(item)} disabled={busy}><Trash2 size={20}/></button>}<button type="button" className="btn" onClick={onClose} disabled={busy}>Отмена</button><button className="btn btn-primary" disabled={busy||processing||(!item&&!file)}>{busy?<LoaderCircle className="spin"/>:<Check/>}{busy?"Сохраняем…":item?"Сохранить изменения":"Добавить в гардероб"}</button></>}</div></form></DialogContent></Dialog>}

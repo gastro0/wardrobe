@@ -45,15 +45,20 @@ export function useWeather(city: City) {
   }, [city.latitude, city.longitude, city.name]);
 
   useEffect(() => {
-    setWeather(null);
-    setDay(0);
-    void refreshWeather();
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setWeather(null);
+      setDay(0);
+      void refreshWeather();
+    });
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void refreshWeather();
     };
     const timer = setInterval(refreshWhenVisible, REFRESH_INTERVAL);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
+      active = false;
       // Responses from the previous city or an unmounted view must be ignored.
       requestSequence.current++;
       activeController.current?.abort();

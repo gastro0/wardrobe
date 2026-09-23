@@ -27,6 +27,22 @@ export function metCode(symbol:string):number {
 }
 type MetPeriod={summary:{symbol_code:string};details:{precipitation_amount?:number;probability_of_precipitation?:number;air_temperature_min?:number;air_temperature_max?:number}};
 type MetPoint={time:string;data:{instant:{details:{air_temperature:number;apparent_air_temperature?:number;wind_speed:number}};next_1_hours?:MetPeriod;next_6_hours?:MetPeriod;next_12_hours?:MetPeriod}};
+function record(value:unknown):value is Record<string,unknown> {
+  return typeof value==="object"&&value!==null&&!Array.isArray(value);
+}
+function metPoint(value:unknown):value is MetPoint {
+  if(!record(value)||typeof value.time!=="string"||!record(value.data))return false;
+  const instant=value.data.instant;
+  if(!record(instant)||!record(instant.details))return false;
+  const details=instant.details;
+  if(typeof details.air_temperature!=="number"||typeof details.wind_speed!=="number")return false;
+  for(const key of ["next_1_hours","next_6_hours","next_12_hours"]){
+    const period=value.data[key];
+    if(period!==undefined&&(!record(period)||!record(period.summary)||
+      typeof period.summary.symbol_code!=="string"||!record(period.details)))return false;
+  }
+  return true;
+}
 function interval(point:MetPoint) {
   if(point.data.next_1_hours)return {period:point.data.next_1_hours,hours:1};
   if(point.data.next_6_hours)return {period:point.data.next_6_hours,hours:6};
@@ -38,9 +54,10 @@ function metConditions(point:MetPoint):Conditions {
   if(!period)throw new Error("Missing forecast interval");
   return {temperature:number(details.air_temperature),feels:number(details.apparent_air_temperature??details.air_temperature),wind:number(details.wind_speed),code:metCode(period.summary.symbol_code),rain:number(period.details.precipitation_amount??0),probability:probability(period.details.probability_of_precipitation),isDay:!period.summary.symbol_code.endsWith("_night")};
 }
-export function fromMet(data:any,timezone:string,now=Date.now()):Weather {
-  const series=data?.properties?.timeseries as MetPoint[]|undefined;
-  if(!Array.isArray(series)||!series.length)throw new Error("Missing forecast timeseries");
+export function fromMet(data:unknown,timezone:string,now=Date.now()):Weather {
+  const properties=record(data)?data.properties:undefined;
+  const series=record(properties)?properties.timeseries:undefined;
+  if(!Array.isArray(series)||!series.length||!series.every(metPoint))throw new Error("Missing forecast timeseries");
   // The current interval starts before now and must still contain now.
   const currentPoint=series.filter(p=>Date.parse(p.time)<=now&&Date.parse(p.time)+interval(p).hours*3600000>now&&interval(p).period).at(-1);
   if(!currentPoint)throw new Error("Forecast does not cover current time");
@@ -57,10 +74,24 @@ export function fromMet(data:any,timezone:string,now=Date.now()):Weather {
   if(days.length<2||days[0].date!==today)throw new Error("Incomplete daily forecast");
   return {current:metConditions(currentPoint),days,timezone,time:localTime(currentPoint.time,timezone),fetchedAt:new Date(now).toISOString(),source:"met-no",feelsEstimated:series.some(p=>p.data.instant.details.apparent_air_temperature==null)};
 }
-export function fromOpenMeteo(data:any,now=Date.now()):Weather {
-  const d=data,current=d?.current,daily=d?.daily;
-  if(!current||!Array.isArray(daily?.time)||!daily.time.length)throw new Error("Missing weather data");
-  const hour=(d.hourly?.time??[]).findIndex((time:string)=>time.slice(0,13)===current.time.slice(0,13));
-  const probabilities:number[]=hour<0?[]:(d.hourly?.precipitation_probability??[]).slice(hour,hour+6).filter((v:unknown)=>typeof v==="number"&&Number.isFinite(v));
-  return {current:{temperature:number(current.temperature_2m),feels:number(current.apparent_temperature),code:number(current.weather_code),wind:number(current.wind_speed_10m),rain:number(current.precipitation??0),isDay:!!current.is_day,probability:probabilities.length?Math.max(...probabilities):null},days:daily.time.map((date:string,i:number)=>({date,min:number(daily.temperature_2m_min[i]),max:number(daily.temperature_2m_max[i]),feels:number(daily.apparent_temperature_max[i]),code:number(daily.weather_code[i]),wind:number(daily.wind_speed_10m_max[i]),rain:number(daily.precipitation_sum[i]),probability:probability(daily.precipitation_probability_max?.[i])})),timezone:d.timezone,time:current.time,fetchedAt:new Date(now).toISOString(),source:"open-meteo"};
+export function fromOpenMeteo(data:unknown,now=Date.now()):Weather {
+  if(!record(data)||!record(data.current)||!record(data.daily))throw new Error("Missing weather data");
+  const current=data.current,daily=data.daily;
+  if(!Array.isArray(daily.time)||!daily.time.length||typeof current.time!=="string"||
+    typeof data.timezone!=="string")throw new Error("Missing weather data");
+  const dailyArray=(key:string):unknown[]=>{
+    const values=daily[key];
+    if(!Array.isArray(values))throw new Error("Missing weather data");
+    return values;
+  };
+  const hourly=record(data.hourly)?data.hourly:undefined;
+  const hourlyTimes=hourly&&Array.isArray(hourly.time)?hourly.time:[];
+  const hour=hourlyTimes.findIndex((time:unknown)=>typeof time==="string"&&time.slice(0,13)===(current.time as string).slice(0,13));
+  const hourlyRain=hourly&&Array.isArray(hourly.precipitation_probability)?hourly.precipitation_probability:[];
+  const probabilities:number[]=hour<0?[]:hourlyRain.slice(hour,hour+6).filter((value:unknown):value is number=>typeof value==="number"&&Number.isFinite(value));
+  const minimums=dailyArray("temperature_2m_min"),maximums=dailyArray("temperature_2m_max");
+  const feels=dailyArray("apparent_temperature_max"),codes=dailyArray("weather_code");
+  const winds=dailyArray("wind_speed_10m_max"),rains=dailyArray("precipitation_sum");
+  const dailyProbabilities=Array.isArray(daily.precipitation_probability_max)?daily.precipitation_probability_max:[];
+  return {current:{temperature:number(current.temperature_2m),feels:number(current.apparent_temperature),code:number(current.weather_code),wind:number(current.wind_speed_10m),rain:number(current.precipitation??0),isDay:!!current.is_day,probability:probabilities.length?Math.max(...probabilities):null},days:daily.time.map((date:unknown,i:number)=>({date:String(date),min:number(minimums[i]),max:number(maximums[i]),feels:number(feels[i]),code:number(codes[i]),wind:number(winds[i]),rain:number(rains[i]),probability:probability(dailyProbabilities[i])})),timezone:data.timezone,time:current.time,fetchedAt:new Date(now).toISOString(),source:"open-meteo"};
 }

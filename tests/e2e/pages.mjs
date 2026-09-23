@@ -13,6 +13,20 @@ export class WardrobePage {
   item(name) { return this.page.getByRole("button", {name: `Открыть ${name}`, exact: true}); }
 }
 
+export class ItemEditorPage {
+  constructor(page) {
+    this.wardrobe = new WardrobePage(page);
+    this.dialog = page.getByRole("dialog");
+    this.name = this.dialog.getByRole("textbox", {name: "Название", exact: true});
+  }
+  async open(name) { await this.wardrobe.item(name).click(); }
+  async saveAs(name) {
+    await this.name.fill(name);
+    await this.dialog.getByRole("button", {name: "Сохранить изменения"}).click();
+    await this.dialog.waitFor({state: "hidden"});
+  }
+}
+
 export class OutfitsPage {
   constructor(page) {
     this.page = page;

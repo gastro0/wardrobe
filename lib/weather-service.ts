@@ -3,7 +3,7 @@ import type {Weather} from "./wardrobe";
 
 const MINUTE=60000;
 const RETAIN=2*60*MINUTE;
-type Entry={data?:any;fetchedAt:number;expires:number;modified?:string;blockedUntil?:number};
+type Entry={data?:unknown;fetchedAt:number;expires:number;modified?:string;blockedUntil?:number};
 const memory=new Map<string,Entry>();
 const pending=new Map<string,Promise<Entry>>();
 const USER_AGENT="FormaWardrobe/1.0 (https://forma-wardrobe.gastro0.chatgpt.site)";
@@ -58,7 +58,12 @@ async function timezoneForCity(city:string,lat:number,lon:number,origin:string):
   url.search=new URLSearchParams({name:city,count:"10",language:"ru",format:"json"}).toString();
   try{
     const entry=await upstream(url,origin,60*MINUTE);
-    const matches=(entry.data.results??[]).filter((c:any)=>Math.abs(c.latitude-lat)<.15&&Math.abs(c.longitude-lon)<.15);
+    const payload=entry.data;
+    const results=payload&&typeof payload==="object"&&"results" in payload?payload.results:undefined;
+    const matches=(Array.isArray(results)?results:[]).filter((city:unknown):city is {latitude:number;longitude:number;timezone?:unknown}=>
+      !!city&&typeof city==="object"&&"latitude" in city&&"longitude" in city&&
+      typeof city.latitude==="number"&&typeof city.longitude==="number"&&
+      Math.abs(city.latitude-lat)<.15&&Math.abs(city.longitude-lon)<.15);
     const timezone=matches[0]?.timezone;
     if(typeof timezone==="string"){new Intl.DateTimeFormat("en",{timeZone:timezone});return timezone}
   }catch{/* The response explicitly labels UTC if city timezone is unavailable. */}
