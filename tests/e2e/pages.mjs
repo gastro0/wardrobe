@@ -57,3 +57,32 @@ export class WeatherPage {
   async retry() { await this.page.getByRole("button", {name: "Повторить", exact: true}).click(); }
   async tomorrow() { await this.page.getByRole("button", {name: /^Завтра/}).click(); }
 }
+
+export class TelegramPage {
+  constructor(page) {
+    this.page = page;
+    this.entryTitle = page.getByRole("heading", {name: "Ваш гардероб в Telegram", exact: true});
+    this.loginError = page.getByRole("heading", {name: "Не удалось войти", exact: true});
+    this.launch = page.getByRole("link", {name: "Открыть в Telegram"});
+    this.profile = page.getByRole("dialog");
+    this.name = this.profile.getByRole("textbox", {name: "Имя", exact: true});
+  }
+  async visit(baseURL) { await this.page.goto(baseURL); }
+  async retry() { await this.page.getByRole("button", {name: "Повторить", exact: true}).click(); }
+  async back() {
+    await this.page.waitForFunction(() => window.telegramTest.back);
+    await this.page.evaluate(() => window.telegramTest.pressBack());
+  }
+  async changeTheme(value) { await this.page.evaluate(theme => window.telegramTest.theme(theme), value); }
+  async openProfile() { await this.page.getByRole("button", {name: "Открыть профиль", exact: true}).click(); }
+  async startWardrobe() { await this.profile.getByRole("button", {name: "Начать гардероб"}).click(); }
+  async runtime() { return this.page.evaluate(() => ({...window.telegramTest, theme: undefined, pressBack: undefined})); }
+  async layout() {
+    return this.page.evaluate(() => ({
+      width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+      theme: document.documentElement.dataset.theme, background: getComputedStyle(document.body).backgroundColor,
+      headerPadding: getComputedStyle(document.querySelector(".app-header")).paddingTop,
+      navigationTop: document.querySelector(".app-navigation").getBoundingClientRect().top,
+    }));
+  }
+}

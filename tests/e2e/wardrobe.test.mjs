@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {after, before, test} from "node:test";
-import {launchBrowser, mockWardrobe} from "./fixture.mjs";
-import {WardrobePage, OutfitsPage, OutfitEditor, WeatherPage} from "./pages.mjs";
+import {launchBrowser, mockWardrobe, mockTelegram} from "./fixture.mjs";
+import {WardrobePage, OutfitsPage, OutfitEditor, WeatherPage, TelegramPage} from "./pages.mjs";
 
 const baseURL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8787";
 let browser;
@@ -17,6 +17,7 @@ async function session(t, viewport, options) {
   page.on("pageerror", error => errors.push(error.message));
   t.after(() => assert.deepEqual(errors, [], "No browser runtime errors"));
   const state = await mockWardrobe(page, options);
+  if (options?.telegram) await mockTelegram(page, options.theme);
   const wardrobe = new WardrobePage(page);
   await wardrobe.open(baseURL);
   return {page, state, wardrobe, outfits: new OutfitsPage(page), editor: new OutfitEditor(page), weather: new WeatherPage(page)};
@@ -78,6 +79,96 @@ test("Weather and saving recover after errors", async t => {
   assert.equal(await editor.name.inputValue(), "После ошибки");
   await editor.saveAs("После ошибки");
   await outfits.card("После ошибки").waitFor();
+});
+
+for (const width of [390, 1280]) {
+  test(`Telegram navigation, safe areas and theme at ${width}px`, async t => {
+    const {page, outfits, wardrobe} = await session(t, {width, height: 844}, {telegram: true, theme: "dark"});
+    const telegram = new TelegramPage(page);
+    assert.equal((await telegram.runtime()).ready, true);
+    assert.equal((await telegram.runtime()).expanded, true);
+    assert.equal((await telegram.runtime()).back, false);
+    const dark = await telegram.layout();
+    assert.equal(dark.theme, "dark");
+    assert.equal(dark.background, "rgb(24, 24, 24)");
+    assert.equal(dark.headerPadding, "36px");
+    assert.ok(dark.navigationTop >= 36, "Navigation stays below Telegram's top safe area");
+    assert.ok(dark.scrollWidth <= dark.width);
+    await outfits.open();
+    await telegram.back();
+    await wardrobe.item("Молочная футболка").waitFor();
+    await telegram.openProfile();
+    await telegram.profile.waitFor();
+    assert.equal((await telegram.runtime()).closing, true);
+    await telegram.back();
+    await telegram.profile.waitFor({state: "hidden"});
+    assert.equal((await telegram.runtime()).closing, false);
+    await telegram.changeTheme("light");
+    const light = await telegram.layout();
+    assert.equal(light.background, "rgb(255, 255, 255)");
+    assert.equal(light.theme, "light");
+  });
+}
+
+for (const loginState of ["outside", "fail", "cookies"]) {
+  test(`Telegram entry handles ${loginState} without loading private data`, async t => {
+    const context = await browser.newContext({viewport: {width: 390, height: 844}});
+    t.after(() => context.close());
+    const page = await context.newPage();
+    page.setDefaultTimeout(10_000);
+    await mockWardrobe(page, {loginState});
+    if (loginState !== "outside") await mockTelegram(page);
+    const protectedRequests = [];
+    page.on("request", request => {
+      if (new URL(request.url()).pathname.startsWith("/api/") && !request.url().includes("/api/telegram/session")) protectedRequests.push(request.url());
+    });
+    const telegram = new TelegramPage(page);
+    await telegram.visit(baseURL);
+    if (loginState === "outside") {
+      await telegram.entryTitle.waitFor();
+      assert.equal(await telegram.launch.getAttribute("href"), "https://t.me/forma_test_bot?startapp");
+      assert.deepEqual(protectedRequests, []);
+    } else {
+      await telegram.loginError.waitFor();
+      assert.deepEqual(protectedRequests, []);
+      if (loginState === "fail") {
+        await telegram.retry();
+        await new WardrobePage(page).item("Молочная футболка").waitFor();
+      }
+    }
+  });
+}
+
+test("Telegram SDK network failure can be retried", async t => {
+  const context = await browser.newContext({viewport: {width: 390, height: 844}});
+  t.after(() => context.close());
+  const page = await context.newPage();
+  page.setDefaultTimeout(10_000);
+  await mockWardrobe(page);
+  await mockTelegram(page, "light", {viaSdk: true});
+  const telegram = new TelegramPage(page);
+  await telegram.visit(baseURL + "/#tgWebAppData=test");
+  await telegram.loginError.waitFor();
+  await telegram.retry();
+  await new WardrobePage(page).item("Молочная футболка").waitFor();
+  assert.equal((await telegram.runtime()).ready, true);
+});
+
+test("First Telegram login prefills the verified name and keeps onboarding open on Back", async t => {
+  const context = await browser.newContext({viewport: {width: 390, height: 844}});
+  t.after(() => context.close());
+  const page = await context.newPage();
+  page.setDefaultTimeout(10_000);
+  await mockWardrobe(page, {newProfile: true});
+  await mockTelegram(page);
+  const telegram = new TelegramPage(page);
+  await telegram.visit(baseURL);
+  await telegram.profile.waitFor();
+  assert.equal(await telegram.name.inputValue(), "Тест");
+  await telegram.back();
+  assert.equal(await telegram.profile.isVisible(), true);
+  await telegram.startWardrobe();
+  await telegram.profile.waitFor({state: "hidden"});
 });
 
 test("Profile filtering and deleted pieces remain consistent", async t => {

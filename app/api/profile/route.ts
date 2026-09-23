@@ -10,14 +10,14 @@ const schema = z.object({
 export async function GET(request: Request) {
   try {
     const profile = await db().prepare("SELECT name, gender FROM wardrobe_profiles WHERE user_id=?")
-      .bind(user(request)).first<Profile>();
+      .bind(await user(request)).first<Profile>();
     return json({ profile });
   } catch (error) { return failure(error); }
 }
 
 export async function POST(request: Request) {
   try {
-    const owner = protect(request);
+    const owner = await protect(request);
     const parsed = schema.safeParse(await body(request));
     if (!parsed.success) throw new ApiError(400, "Укажите имя до 60 символов и выберите пол.");
     const profile = parsed.data;

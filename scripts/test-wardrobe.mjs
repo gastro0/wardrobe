@@ -88,7 +88,7 @@ const bundle = await build({
 const worker = new Miniflare({
   modules: true, script: bundle.outputFiles[0].text,
   compatibilityDate: "2026-05-15", compatibilityFlags: ["nodejs_compat"],
-  d1Databases: ["DB"], r2Buckets: ["BUCKET"],
+  d1Databases: ["DB"], r2Buckets: ["BUCKET"], bindings: {ALLOW_LOCAL_DEVELOPMENT: "true"},
 });
 try {
   const database = await worker.getD1Database("DB");
@@ -97,15 +97,15 @@ try {
       await database.prepare(sql).run();
     }
   }
-  const request = (url, method = "GET", data) => worker.dispatchFetch("https://wardrobe.test" + url, {
-    method, headers: {"Content-Type":"application/json", Origin:"https://wardrobe.test"},
+  const request = (url, method = "GET", data) => worker.dispatchFetch("http://127.0.0.1" + url, {
+    method, headers: {"Content-Type":"application/json", Origin:"http://127.0.0.1"},
     ...(data === undefined ? {} : {body: JSON.stringify(data)}),
   });
   assert.equal((await (await request("/api/profile")).json()).profile, null);
   assert.equal((await request("/api/profile", "POST", {name:" ",gender:"male"})).status, 400);
   assert.equal((await request("/api/profile", "POST", {name:"Test",gender:"invalid"})).status, 400);
   assert.equal((await request("/api/profile", "POST", {name:"x".repeat(61),gender:"male"})).status, 400);
-  assert.equal((await worker.dispatchFetch("https://wardrobe.test/api/profile", {
+  assert.equal((await worker.dispatchFetch("http://127.0.0.1/api/profile", {
     method:"POST", headers:{Origin:"https://other.test","Content-Type":"application/json"},
     body:JSON.stringify({name:"Test",gender:"male"}),
   })).status, 403);
@@ -124,7 +124,7 @@ try {
     const form = new FormData();
     form.append("data", JSON.stringify({...details,category,...extra}));
     form.append("photo", new Blob([Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64")], {type:"image/png"}), "photo.png");
-    return worker.dispatchFetch("https://wardrobe.test/api/wardrobe", {method:"POST",headers:{Origin:"https://wardrobe.test"},body:form});
+    return worker.dispatchFetch("http://127.0.0.1/api/wardrobe", {method:"POST",headers:{Origin:"http://127.0.0.1"},body:form});
   };
   assert.equal((await upload("dress")).status, 400);
   assert.equal((await upload("skirt")).status, 400);

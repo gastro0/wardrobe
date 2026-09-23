@@ -1,0 +1,13 @@
+# Copy to .dev.vars. Never commit or share the filled file.
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_BOT_USERNAME=W4rdrobeBot
+# Optional: maps exactly this Telegram ID to the existing private-wardrobe.
+# Set before the owner's first login; leave empty for a fresh wardrobe.
+TELEGRAM_OWNER_ID=
+# Local preview without Telegram, only on loopback and without a bot token.
+ALLOW_LOCAL_DEVELOPMENT=true
+# Optional remote photo storage. Keep r2 for local disk storage.
+PHOTO_STORAGE=r2
+SUPABASE_URL=
+SUPABASE_STORAGE_BUCKET=wardrobe-photos
+SUPABASE_SECRET_KEY=

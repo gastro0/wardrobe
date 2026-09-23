@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "forma-wardrobe",
+  "main": "vinext/server/fetch-handler",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ALLOW_LOCAL_DEVELOPMENT": "false",
+    "TELEGRAM_BOT_USERNAME": "W4rdrobeBot",
+    "PHOTO_STORAGE": "supabase",
+    "SUPABASE_URL": "https://REPLACE_WITH_PROJECT_REF.supabase.co",
+    "SUPABASE_STORAGE_BUCKET": "wardrobe-photos"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "forma-wardrobe",
+      "database_id": "REPLACE_WITH_DATABASE_ID",
+      "migrations_dir": "drizzle"
+    }
+  ]
+}

@@ -6,10 +6,10 @@ import { genders, type Gender, type Profile } from "@/lib/wardrobe";
 import { api } from "@/lib/client";
 import { toast } from "sonner";
 
-export default function ProfileEditor({ profile, onClose, onSaved }: {
-  profile: Profile | null; onClose: () => void; onSaved: (profile: Profile) => void;
+export default function ProfileEditor({ profile, initialName, onClose, onSaved }: {
+  profile: Profile | null; initialName?: string; onClose: () => void; onSaved: (profile: Profile) => void;
 }) {
-  const [name, setName] = useState(profile?.name ?? "");
+  const [name, setName] = useState(profile?.name ?? initialName?.slice(0,60) ?? "");
   const [gender, setGender] = useState<Gender>(profile?.gender ?? "unspecified");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

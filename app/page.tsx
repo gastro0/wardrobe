@@ -1,2 +1,2 @@
-import WardrobeApp from "./wardrobe-app";
-export default function Page(){return <WardrobeApp/>;}
+import TelegramEntry from "./telegram-entry";
+export default function Page(){return <TelegramEntry/>;}

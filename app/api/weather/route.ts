@@ -3,7 +3,7 @@ import {getWeather} from "@/lib/weather-service";
 
 export async function GET(request:Request){
   try{
-    user(request);
+    await user(request);
     const url=new URL(request.url),q=url.searchParams;
     const lat=Number(q.get("lat")),lon=Number(q.get("lon"));
     if(!q.get("lat")?.trim()||!q.get("lon")?.trim()||!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)throw new ApiError(400,"Выберите город.");
