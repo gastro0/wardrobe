@@ -7,7 +7,9 @@ declare namespace Cloudflare {
     SUPABASE_SECRET_KEY?: string;
     SUPABASE_STORAGE_BUCKET?: string;
     TELEGRAM_BOT_TOKEN?: string;
+    TELEGRAM_WEBHOOK_SECRET?: string;
     TELEGRAM_BOT_USERNAME?: string;
+    TELEGRAM_MINI_APP_URL?: string;
     TELEGRAM_OWNER_ID?: string;
     ALLOW_LOCAL_DEVELOPMENT?: string;
   }

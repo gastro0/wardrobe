@@ -18,10 +18,10 @@ export function WeatherIcon({ code = 0, isDay = true, className = "" }: {
 }
 
 export function Photo({ item, className = "" }: { item: Item; className?: string }) {
-  const [failed, setFailed] = useState(false);
-  return failed
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  return failedSource === item.image
     ? <span className="photo-failed"><Shirt/><small>Не удалось загрузить фото</small></span>
-    : <img className={className} src={item.image} alt={item.name} loading="lazy" onError={() => setFailed(true)}/>;
+    : <img className={className} src={item.image} alt={item.name} loading="lazy" onError={() => setFailedSource(item.image)}/>;
 }
 
 export const colours: Record<string, string> = {

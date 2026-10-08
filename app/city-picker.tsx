@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LoaderCircle, MapPin, X } from "lucide-react";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { LoaderCircle, MapPin } from "lucide-react";
+import { DialogDescription } from "@/components/ui/dialog";
+import AppDialog from "@/components/app-dialog";
 import { Combobox, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "@/components/ui/combobox";
 import { defaultCity, type City } from "@/lib/wardrobe";
 import { api } from "@/lib/client";
@@ -19,6 +20,7 @@ export default function CityPicker({ onClose, onSelect }: {
   onClose: () => void;
   onSelect: (city: City) => Promise<void>;
 }) {
+  const [open, setOpen] = useState(true);
   const [query, setQuery] = useState("");
   const [cities, setCities] = useState<City[]>(popular);
   const [busy, setBusy] = useState(false);
@@ -49,15 +51,13 @@ export default function CityPicker({ onClose, onSelect }: {
     if (!city || saving) return;
     setSaving(true);
     setError("");
-    try { await onSelect(city); onClose(); }
+    try { await onSelect(city); setOpen(false); }
     catch (error) { setError((error as Error).message); }
     finally { setSaving(false); }
   }
 
-  return <Dialog open onOpenChange={open => { if (!open && !saving) onClose(); }}>
-    <DialogContent className="city-dialog" showCloseButton={false}>
-      <DialogClose className="dialog-x" aria-label="Закрыть выбор города" disabled={saving}><X size={20}/></DialogClose>
-      <DialogTitle className="dialog-heading">В каком вы городе?</DialogTitle>
+  return <AppDialog open={open} onOpenChange={setOpen} onClosed={onClose}
+    className="city-dialog" title="В каком вы городе?" closeLabel="Закрыть выбор города" busy={saving}>
       <DialogDescription>Прогноз и образы будут подобраны для него.</DialogDescription>
       <Combobox inline open items={cities} itemToStringLabel={(city: City) => city.name}
         filter={null} onInputValueChange={changeQuery} onValueChange={choose} disabled={saving}>
@@ -74,6 +74,5 @@ export default function CityPicker({ onClose, onSelect }: {
       </Combobox>
       {saving && <p className="inline-status"><LoaderCircle className="spin" size={16}/>Меняем город…</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
-    </DialogContent>
-  </Dialog>;
+  </AppDialog>;
 }

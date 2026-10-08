@@ -21,18 +21,22 @@ type ItemInput = z.infer<typeof itemSchema>;
 type ItemRow = {
   id: string; name: string; category: Category; color: string; tags: string;
   min_temp: number; max_temp: number; rainproof: number; windproof: number;
-  created_at: string;
+  created_at: string; image_key: string;
 };
 type OutfitRow = { id: string; name: string; item_ids: string; created_at: string };
 type CityRow = { city: string; latitude: number; longitude: number };
 
 function itemResponse(row: ItemRow) {
+  // A replacement gets a new URL so already mounted cards and collages reload it.
+  const versionPrefix = `wardrobe/${row.id}-`;
+  const version = row.image_key.startsWith(versionPrefix)
+    ? `?v=${encodeURIComponent(row.image_key.slice(versionPrefix.length))}` : "";
   return {
     id: row.id, name: row.name, category: normalizeCategory(row.category),
     color: row.color, tags: JSON.parse(row.tags ?? "[]"),
     minTemp: row.min_temp, maxTemp: row.max_temp,
     rainproof: !!row.rainproof, windproof: !!row.windproof,
-    image: `/api/images/${row.id}`, createdAt: row.created_at,
+    image: `/api/images/${row.id}${version}`, createdAt: row.created_at,
   };
 }
 
@@ -51,6 +55,23 @@ function imageType(bytes: Uint8Array) {
   if (String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
       String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "image/webp";
   return null;
+}
+
+async function photoForm(request: Request) {
+  if (Number(request.headers.get("content-length")) > 9 * 1024 * 1024) {
+    throw new ApiError(413, "Фото должно быть меньше 8 МБ.");
+  }
+  try { return await request.formData(); }
+  catch { throw new ApiError(400, "Не удалось прочитать фотографию. Выберите её ещё раз."); }
+}
+
+async function readPhoto(photo: FormDataEntryValue | null) {
+  if (!(photo instanceof File) || !photo.size) throw new ApiError(400, "Добавьте фотографию вещи.");
+  if (photo.size > 8 * 1024 * 1024) throw new ApiError(413, "Фото должно быть меньше 8 МБ.");
+  const bytes = new Uint8Array(await photo.arrayBuffer());
+  const type = imageType(bytes);
+  if (!type) throw new ApiError(400, "Выберите фото JPG, PNG или WebP.");
+  return { bytes, type };
 }
 
 export async function GET(request: Request) {
@@ -82,20 +103,12 @@ export async function POST(request: Request) {
   let uploaded = false;
   try {
     const owner = await protect(request);
-    if (Number(request.headers.get("content-length")) > 9 * 1024 * 1024) {
-      throw new ApiError(413, "Фото должно быть меньше 8 МБ.");
-    }
-    const form = await request.formData();
+    const form = await photoForm(request);
     const parsed = itemSchema.safeParse(JSON.parse(String(form.get("data"))));
     if (!parsed.success) throw new ApiError(400, "Проверьте название, теги и диапазон температуры.");
     await checkProfile(owner, parsed.data.category);
 
-    const photo = form.get("photo");
-    if (!(photo instanceof File) || !photo.size) throw new ApiError(400, "Добавьте фотографию вещи.");
-    if (photo.size > 8 * 1024 * 1024) throw new ApiError(413, "Фото должно быть меньше 8 МБ.");
-    const bytes = new Uint8Array(await photo.arrayBuffer());
-    const type = imageType(bytes);
-    if (!type) throw new ApiError(400, "Выберите фото JPG, PNG или WebP.");
+    const { bytes, type } = await readPhoto(form.get("photo"));
 
     const id = crypto.randomUUID();
     key = `wardrobe/${id}`;
@@ -117,22 +130,52 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  let uploadedKey: string | undefined;
+  let committed = false;
   try {
     const owner = await protect(request);
-    const payload = await body(request);
+    const multipart = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() === "multipart/form-data";
+    const form = multipart ? await photoForm(request) : null;
+    const payload: unknown = form ? JSON.parse(String(form.get("data"))) : await body(request);
     const parsed = itemSchema.safeParse(payload);
-    if (!parsed.success || typeof payload.id !== "string") {
+    const identity = z.object({ id: z.string().min(1).max(100) }).safeParse(payload);
+    if (!parsed.success || !identity.success) {
       throw new ApiError(400, "Проверьте название, теги и диапазон температуры.");
     }
     const item = parsed.data;
+    const { id } = identity.data;
+    const database = db();
+    const existing = await database.prepare("SELECT image_key FROM wardrobe_items WHERE id=? AND user_id=?")
+      .bind(id, owner).first<{ image_key: string }>();
+    if (!existing) throw new ApiError(404, "Вещь не найдена.");
     await checkProfile(owner, item.category);
-    const result = await db().prepare("UPDATE wardrobe_items SET name=?,category=?,color=?,min_temp=?,max_temp=?,rainproof=?,windproof=?,tags=COALESCE(?,tags) WHERE id=? AND user_id=?")
+    if (form) {
+      const { bytes, type } = await readPhoto(form.get("photo"));
+      const key = `wardrobe/${id}-${crypto.randomUUID()}`;
+      await bucket().put(key, bytes, { httpMetadata: { contentType: type } });
+      uploadedKey = key;
+    }
+    // Keep the old photo until the DB points at the uploaded one. The key check
+    // prevents competing replacements from deleting each other's active photo.
+    const saved = await database.prepare("UPDATE wardrobe_items SET name=?,category=?,color=?,min_temp=?,max_temp=?,rainproof=?,windproof=?,tags=COALESCE(?,tags),image_key=? WHERE id=? AND user_id=? AND image_key=? RETURNING *")
       .bind(item.name, item.category, item.color, item.minTemp, item.maxTemp,
         Number(item.rainproof), Number(item.windproof),
-        item.tags === undefined ? null : JSON.stringify(item.tags), payload.id, owner).run();
-    if (!result.meta.changes) throw new ApiError(404, "Вещь не найдена.");
-    return json({ ok: true });
-  } catch (error) { return failure(error); }
+        item.tags === undefined ? null : JSON.stringify(item.tags), uploadedKey ?? existing.image_key,
+        id, owner, existing.image_key).first<ItemRow>();
+    if (!saved) throw new ApiError(409, "Вещь была изменена или удалена. Обновите гардероб и попробуйте ещё раз.");
+    committed = true;
+    if (uploadedKey) {
+      try { await bucket().delete(existing.image_key); }
+      catch (cleanupError) { console.error("Replaced image cleanup failed", cleanupError); }
+    }
+    return json({ ok: true, item: itemResponse(saved) });
+  } catch (error) {
+    if (uploadedKey && !committed) {
+      try { await bucket().delete(uploadedKey); }
+      catch (cleanupError) { console.error("Image cleanup failed", cleanupError); }
+    }
+    return failure(error);
+  }
 }
 
 export async function DELETE(request: Request) {

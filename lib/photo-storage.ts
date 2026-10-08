@@ -13,13 +13,25 @@ export interface SupabaseStorageConfig {
   bucket: string;
 }
 
+type StorageFailure = "configuration" | "request" | "download" | "upload" | "deletion" | "response";
+
+export class PhotoStorageError extends Error {
+  constructor(public operation: StorageFailure, public upstreamStatus?: number) {
+    // Do not retain provider responses, request headers or credentials in errors.
+    super(`Photo storage ${operation} failed${upstreamStatus === undefined ? "" : ` (${upstreamStatus})`}`);
+    this.name = "PhotoStorageError";
+  }
+}
+
 // Server only: callers must check the Telegram session and photo owner first.
 export function createSupabaseStorage(config: SupabaseStorageConfig): PhotoStorage {
-  const url = new URL(config.url);
+  let url: URL;
+  try { url = new URL(config.url); }
+  catch { throw new PhotoStorageError("configuration"); }
   if (url.protocol !== "https:" || !/^[a-z0-9-]+\.supabase\.co$/.test(url.hostname) ||
       url.username || url.password || url.port || url.search || url.hash || url.pathname !== "/" ||
       !config.secretKey.startsWith("sb_secret_") || !/^[a-z0-9-]+$/.test(config.bucket)) {
-    throw new Error("Invalid photo storage configuration");
+    throw new PhotoStorageError("configuration");
   }
   const base = `${url.origin}/storage/v1/object/${config.bucket}`;
   function objectUrl(key: string) {
@@ -33,7 +45,7 @@ export function createSupabaseStorage(config: SupabaseStorageConfig): PhotoStora
     try {
       return await fetch(target, { ...init, headers, redirect: "manual", signal: AbortSignal.timeout(30_000) });
     } catch {
-      throw new Error("Photo storage request failed");
+      throw new PhotoStorageError("request");
     }
   }
   async function missing(response: Response) {
@@ -47,12 +59,12 @@ export function createSupabaseStorage(config: SupabaseStorageConfig): PhotoStora
       const response = await send(objectUrl(key));
       if (!response.ok) {
         if (await missing(response)) return null;
-        throw new Error(`Photo storage download failed (${response.status})`);
+        throw new PhotoStorageError("download", response.status);
       }
       const contentType = response.headers.get("content-type")?.split(";")[0];
       if (!response.body || !contentType || !["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
         await response.body?.cancel();
-        throw new Error("Invalid photo storage response");
+        throw new PhotoStorageError("response");
       }
       return { body: response.body, httpMetadata: { contentType } };
     },
@@ -62,7 +74,7 @@ export function createSupabaseStorage(config: SupabaseStorageConfig): PhotoStora
         headers: { "Content-Type": options.httpMetadata.contentType, "x-upsert": "false", "Cache-Control": "max-age=0" },
       });
       await response.body?.cancel();
-      if (!response.ok) throw new Error(`Photo storage upload failed (${response.status})`);
+      if (!response.ok) throw new PhotoStorageError("upload", response.status);
     },
     async delete(key) {
       objectUrl(key);
@@ -71,7 +83,7 @@ export function createSupabaseStorage(config: SupabaseStorageConfig): PhotoStora
         body: JSON.stringify({ prefixes: [key] }),
       });
       await response.body?.cancel();
-      if (!response.ok) throw new Error(`Photo storage deletion failed (${response.status})`);
+      if (!response.ok) throw new PhotoStorageError("deletion", response.status);
     },
   };
 }

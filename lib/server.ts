@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { readSessionCookie, verifyTelegramSession } from "./telegram-auth";
-import { createSupabaseStorage, type PhotoStorage } from "./photo-storage";
+import { createSupabaseStorage, PhotoStorageError, type PhotoStorage } from "./photo-storage";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -12,7 +12,7 @@ export function db() {
 }
 
 export function bucket(): PhotoStorage {
-  const unavailable = () => new ApiError(503, "Не удалось подключиться к фотографиям. Попробуйте ещё раз.");
+  const unavailable = () => new PhotoStorageError("configuration");
   if (env.PHOTO_STORAGE === "supabase") {
     if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY || !env.SUPABASE_STORAGE_BUCKET) {
       throw unavailable();
@@ -66,6 +66,13 @@ export function json(data: unknown, status = 200) {
 export function failure(error: unknown) {
   if (error instanceof ApiError) return json({ error: error.message }, error.status);
   if (error instanceof SyntaxError) return json({ error: "Не удалось прочитать данные." }, 400);
+  if (error instanceof PhotoStorageError) {
+    console.error("Photo storage unavailable", { operation: error.operation, status: error.upstreamStatus });
+    return json({
+      error: "Хранилище фотографий временно недоступно. Попробуйте ещё раз позже.",
+      code: "PHOTO_STORAGE_UNAVAILABLE",
+    }, 503);
+  }
   console.error("Wardrobe request failed", error);
   return json({ error: "Не удалось выполнить действие. Ваши изменения не потеряны — попробуйте ещё раз." }, 503);
 }

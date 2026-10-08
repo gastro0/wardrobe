@@ -1,9 +1,9 @@
 # «Форма» в Telegram
 
 Приложение открывается как Telegram Mini App. У каждого пользователя свои вещи,
-фотографии, образы, профиль и город. Бот служит точкой входа через кнопку меню
-и кнопку приложения в профиле. Для этого не нужен постоянно запущенный процесс
-бота, webhook или обработчик `/start`. Ответов на сообщения в чате пока нет.
+фотографии, образы, профиль и город. Бот открывает приложение через кнопку меню
+и кнопку в профиле. Команда `/start` обрабатывается webhook-маршрутом этого же
+Worker: бот отправляет приветствие с кнопкой Mini App. Отдельный процесс не нужен.
 
 ## 1. Создать бота
 
@@ -115,6 +115,52 @@ npx.cmd wrangler secret put TELEGRAM_BOT_TOKEN --config wrangler.telegram.json
 Обычная reply-клавиатура `web_app` не используется: для входа нужен `initData.user`,
 передаваемый при запуске через меню, Main Mini App или inline-кнопку.
 
+### Ответ на `/start`
+
+После изменения исходников соберите и опубликуйте Worker. В `wrangler.telegram.json`
+задайте `TELEGRAM_MINI_APP_URL` — тот же HTTPS-адрес, который указан для Mini App
+в BotFather. Если переменная не задана, кнопка откроет корень хоста webhook.
+Используйте этот вариант, только если приложение и webhook находятся на одном хосте.
+Для публичного бота используйте `https://forma-wardrobe.w4rdrobe.workers.dev/`.
+Адрес `chatgpt.site` показывает вход через ChatGPT до запуска Mini App и не подходит
+для входа только через Telegram.
+При замене адреса также обновите **Main Mini App** в BotFather: это отдельная кнопка
+в профиле бота, которую метод `setChatMenuButton` не меняет.
+
+```powershell
+npm.cmd run build
+npx.cmd wrangler deploy --config dist/server/wrangler.json
+```
+
+Создайте отдельный секрет webhook и добавьте его в Worker. Не записывайте его в
+`wrangler.telegram.json` и не используйте вместо него токен бота.
+
+```powershell
+$webhookSecret = node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))"
+$webhookSecret | npx.cmd wrangler secret put TELEGRAM_WEBHOOK_SECRET --config wrangler.telegram.json
+```
+
+Затем зарегистрируйте webhook в Telegram. В `$workerUrl` укажите публичный HTTPS-адрес
+Worker, а токен введите из BotFather. После регистрации отправьте боту `/start`
+в личном чате: придёт сообщение с кнопкой **Открыть «Форму»**.
+
+```powershell
+$workerUrl = "https://forma-wardrobe.<ваш-поддомен>.workers.dev"
+$secureBotToken = Read-Host "Токен бота" -AsSecureString
+$botToken = [System.Net.NetworkCredential]::new("", $secureBotToken).Password
+Invoke-RestMethod -Method Post -Uri "https://api.telegram.org/bot$botToken/setWebhook" -Body @{
+  url = "$workerUrl/api/telegram/webhook"
+  secret_token = $webhookSecret
+  allowed_updates = '["message"]'
+}
+Remove-Variable botToken, secureBotToken, webhookSecret
+```
+
+В ответе Telegram должно быть `ok: true`. Вебхук принимает только обновления с
+секретным заголовком, а сообщения `/start` из групп игнорирует. Если бот уже
+использует другой webhook, `setWebhook` заменит его: сначала учтите обработку
+остальных команд и событий.
+
 ## Существующая личная коллекция
 
 По умолчанию все Telegram-пользователи получают новые независимые гардеробы.
@@ -132,6 +178,30 @@ cookies или токен в чат. Задайте привязку до доб
 она переключает его с `telegram:ID` на `private-wardrobe`, а не объединяет коллекции.
 Если уже появились записи в обеих коллекциях, нужен отдельный перенос.
 Менять ID на чужой нельзя: это передаст доступ к старой коллекции этому аккаунту.
+
+## Если не сохраняется фотография
+
+Ответ `503` с кодом `PHOTO_STORAGE_UNAVAILABLE` означает, что сервер не смог
+подключиться к хранилищу или хранилище отклонило запрос. Фото и поля остаются
+в открытой форме; после восстановления сервиса можно повторить сохранение.
+
+При `PHOTO_STORAGE=supabase` проверьте статус проекта в Supabase Dashboard.
+Проект бесплатного тарифа может быть автоматически приостановлен при низкой
+активности. Если статус `Paused`, восстановите существующий проект через
+`Restore project` и дождитесь доступности Storage. Не создавайте новый проект
+вместо него: фотографии остаются в прежнем хранилище. Отсутствие DNS-записи
+у адреса из `SUPABASE_URL` также требует проверки состояния проекта.
+
+Если проект активен, проверьте наличие приватного bucket, соответствие
+`SUPABASE_URL` и `SUPABASE_STORAGE_BUCKET`, а также серверного секрета
+`SUPABASE_SECRET_KEY` в Worker. В журнале сервера записываются только операция
+и HTTP-статус хранилища; ключи и полный ответ провайдера не выводятся.
+
+Восстановление Supabase не требует сброса D1 или повторного создания профиля.
+Проверки с подменой Storage не доказывают доступность настоящего проекта:
+после восстановления нужен контроль сохранения и открытия фото через Telegram.
+
+Подробнее: [приостановка проектов Supabase](https://supabase.com/docs/guides/platform/free-project-pausing).
 
 ## Локальная разработка
 
@@ -160,6 +230,7 @@ cookies или токен в чат. Задайте привязку до доб
   его в мобильном Telegram. Сессии и токен не помещаются в URL фотографий.
 
 ```powershell
+npm.cmd --prefix autotests ci
 npm.cmd test
 npm.cmd run typecheck
 npm.cmd run build

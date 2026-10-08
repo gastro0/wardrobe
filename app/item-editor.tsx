@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Check, CloudRain, ImagePlus, LoaderCircle, Trash2, Upload, Wind, X } from "lucide-react";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { useEffect, useId, useRef, useState } from "react";
+import { Check, CloudRain, ImagePlus, LoaderCircle, Trash2, Upload, Wind } from "lucide-react";
+import { DialogDescription } from "@/components/ui/dialog";
+import AppDialog from "@/components/app-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -31,6 +32,8 @@ const colors = [
 ];
 
 export default function ItemEditor({ item, gender, onClose, onSaved, onAddOwn, onDelete }: Props) {
+  const [open, setOpen] = useState(true);
+  const formId = useId();
   const demo = !!item?.id.startsWith("demo");
   const [tags, setTags] = useState<string[]>(item?.tags ?? []);
   const [tagDraft, setTagDraft] = useState("");
@@ -77,7 +80,7 @@ export default function ItemEditor({ item, gender, onClose, onSaved, onAddOwn, o
   }
 
   async function choose(photo?: File) {
-    if (!photo || busy || processing) return;
+    if (!photo || demo || busy || processing) return;
     if (!["image/jpeg", "image/png", "image/webp"].includes(photo.type)) {
       setError("Выберите JPG, PNG или WebP. Фото HEIC сначала сохраните как JPG.");
       return;
@@ -121,9 +124,18 @@ export default function ItemEditor({ item, gender, onClose, onSaved, onAddOwn, o
     setError("");
   }
 
+  function cancelReplacement() {
+    if (!item || busy || processing) return;
+    setFile(null);
+    setPhotoSource(null);
+    setProcessedPhoto(null);
+    setPreview(item.image);
+    setError("");
+  }
+
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    if (demo || processing) return;
+    if (demo || busy || processing) return;
     const savedTags = normalizeTags([...tags, ...tagDraft.split(",")]);
     if (savedTags.length > MAX_ITEM_TAGS || savedTags.some(tag => tag.length > MAX_TAG_LENGTH)) {
       setError("Не больше 8 тегов, до 40 символов каждый.");
@@ -154,8 +166,16 @@ export default function ItemEditor({ item, gender, onClose, onSaved, onAddOwn, o
     try {
       let saved: Item;
       if (item) {
-        await api("/api/wardrobe", { method: "PATCH", body: JSON.stringify({ id: item.id, ...data }) });
-        saved = { ...item, ...data };
+        const details = JSON.stringify({ id: item.id, ...data });
+        const form = new FormData();
+        if (file) {
+          form.append("data", details);
+          form.append("photo", file);
+        }
+        const response = await api<{ item: Item }>("/api/wardrobe", {
+          method: "PATCH", body: file ? form : details,
+        });
+        saved = response.item;
       } else {
         const form = new FormData();
         form.append("data", JSON.stringify(data));
@@ -165,27 +185,43 @@ export default function ItemEditor({ item, gender, onClose, onSaved, onAddOwn, o
       }
       onSaved(saved);
       toast.success(item ? "Изменения сохранены" : "Вещь добавлена в гардероб");
-      onClose();
+      setOpen(false);
     } catch (error) { setError((error as Error).message); }
     finally { setBusy(false); }
   }
 
-  return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="form-dialog" showCloseButton={false}>
-      <DialogClose aria-label="Закрыть" className="dialog-x" disabled={busy}><X size={20}/></DialogClose>
-      <DialogTitle className="dialog-heading">{demo ? "Вещь из примера" : item ? "Редактировать вещь" : "Новая вещь"}</DialogTitle>
+  return <AppDialog open={open} onOpenChange={setOpen} onClosed={onClose}
+    className="form-dialog" title={demo ? "Вещь из примера" : item ? "Редактировать вещь" : "Новая вещь"}
+    closeLabel="Закрыть" busy={busy}
+    footer={<div className="form-footer">
+      {demo
+        ? <button type="button" className="btn btn-primary" onClick={onAddOwn}>
+          <ImagePlus/>Добавить свою вещь
+        </button>
+        : <>
+          {item && <button type="button" className="icon-button editor-delete" title="Удалить вещь"
+            aria-label={`Удалить ${item.name}`} onClick={() => onDelete(item)}
+            disabled={busy}><Trash2 size={20}/></button>}
+          <button type="button" className="btn" onClick={() => setOpen(false)} disabled={busy}>Отмена</button>
+          <button type="submit" form={formId} className="btn btn-primary" disabled={busy || processing || (!item && !file)}>
+            {busy ? <LoaderCircle className="spin"/> : <Check/>}
+            {busy ? "Сохраняем…" : item ? "Сохранить изменения" : "Добавить в гардероб"}
+          </button>
+        </>}
+    </div>}>
       <DialogDescription>{demo
         ? "Пример показывает, как можно описать свою вещь."
+        : item ? "Можно заменить фото и изменить описание вещи."
         : "Добавьте фото и подскажите, в какую погоду вам в ней комфортно."}</DialogDescription>
-      <form onSubmit={save} className="item-form">
+      <form id={formId} onSubmit={save} className="item-form">
         <div aria-busy={processing}
           className={`upload-box ${drag ? "drag-active" : ""} ${file && file === processedPhoto && !processing ? "photo-ready" : ""}`}
-          onDragOver={event => { event.preventDefault(); if (!item && !busy && !processing) setDrag(true); }}
+          onDragOver={event => { event.preventDefault(); if (!demo && !busy && !processing) setDrag(true); }}
           onDragLeave={() => setDrag(false)}
           onDrop={event => {
             event.preventDefault();
             setDrag(false);
-            if (!item && !busy && !processing) void choose(event.dataTransfer.files[0]);
+            if (!demo && !busy && !processing) void choose(event.dataTransfer.files[0]);
           }}>
           {preview
             ? <img src={preview} alt={name || "Предпросмотр фотографии"}/>
@@ -195,11 +231,13 @@ export default function ItemEditor({ item, gender, onClose, onSaved, onAddOwn, o
               <small>JPG, PNG, WebP · до 8 МБ</small>
               <small>Фон удалится автоматически</small>
             </div>}
-          {!item && <div className={`photo-controls ${preview ? "photo-controls-preview" : ""}`}>
+          {!demo && <div className={`photo-controls ${preview ? "photo-controls-preview" : ""}`}>
             <button type="button" className={`btn ${preview ? "" : "btn-primary"}`}
               onClick={() => input.current?.click()} disabled={busy || processing}>
-              <Upload/>{preview ? "Другое фото" : "Выбрать фото"}
+              <Upload/>{item ? "Заменить фото" : preview ? "Другое фото" : "Выбрать фото"}
             </button>
+            {item && photoSource && <button type="button" className="btn"
+              onClick={cancelReplacement} disabled={busy || processing}>Отменить замену</button>}
             {photoSource && !processing && <>
               <div className="photo-version-switch" role="group" aria-label="Вариант фотографии">
                 <button type="button" className={file === photoSource ? "btn btn-primary" : "btn"}
@@ -225,7 +263,7 @@ export default function ItemEditor({ item, gender, onClose, onSaved, onAddOwn, o
             aria-label="Загрузить фотографию" onChange={event => {
               void choose(event.target.files?.[0]);
               event.target.value = "";
-            }} disabled={busy || processing}/>
+            }} disabled={demo || busy || processing}/>
         </div>
         <div className="form-fields">
           <label className="field">Название
@@ -260,23 +298,6 @@ export default function ItemEditor({ item, gender, onClose, onSaved, onAddOwn, o
           </div>
         </div>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="form-footer">
-          {demo
-            ? <button type="button" className="btn btn-primary" onClick={onAddOwn}>
-              <ImagePlus/>Добавить свою вещь
-            </button>
-            : <>
-              {item && <button type="button" className="icon-button editor-delete" title="Удалить вещь"
-                aria-label={`Удалить ${item.name}`} onClick={() => onDelete(item)}
-                disabled={busy}><Trash2 size={20}/></button>}
-              <button type="button" className="btn" onClick={onClose} disabled={busy}>Отмена</button>
-              <button className="btn btn-primary" disabled={busy || processing || (!item && !file)}>
-                {busy ? <LoaderCircle className="spin"/> : <Check/>}
-                {busy ? "Сохраняем…" : item ? "Сохранить изменения" : "Добавить в гардероб"}
-              </button>
-            </>}
-        </div>
       </form>
-    </DialogContent>
-  </Dialog>;
+  </AppDialog>;
 }

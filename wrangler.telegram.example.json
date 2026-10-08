@@ -6,7 +6,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "ALLOW_LOCAL_DEVELOPMENT": "false",
-    "TELEGRAM_BOT_USERNAME": "W4rdrobeBot"
+    "TELEGRAM_BOT_USERNAME": "W4rdrobeBot",
+    "TELEGRAM_MINI_APP_URL": "https://REPLACE_WITH_APP_HOST/"
   },
   "d1_databases": [
     {

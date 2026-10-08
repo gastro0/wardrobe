@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
-import { createRequire } from "node:module";
+import { build } from "esbuild";
+import { Miniflare, FormData, Response } from "miniflare";
+import { projectRoot, projectPath } from "../project.mjs";
 import { importTestModule } from "./test-module.mjs";
 
-const runtimeRequire = createRequire(new URL("../node_modules/wrangler/package.json", import.meta.url));
-const { build } = runtimeRequire("esbuild");
-const { Miniflare, FormData, Response } = runtimeRequire("miniflare");
 const auth = await importTestModule("lib/telegram-auth.ts");
 const token = "123456:test-only-not-a-real-bot-token";
 const origin = "https://telegram-wardrobe.test";
@@ -50,7 +49,7 @@ const bundle = await build({
       if(path.startsWith('/api/images/'))return images.GET(request,{params:Promise.resolve({id:path.split('/').pop()})});
       const routes = {'/api/telegram/session':session,'/api/wardrobe':wardrobe,'/api/profile':profile,'/api/settings':settings,'/api/outfits':outfits,'/api/weather':weather,'/api/cities':cities};
       return routes[path]?.[request.method]?.(request) ?? new Response('Not found',{status:404});
-    }};`, resolveDir: process.cwd(), sourcefile: "telegram-test-worker.ts" },
+    }};`, resolveDir: projectRoot, sourcefile: "telegram-test-worker.ts" },
   bundle: true, write: false, format: "esm", platform: "neutral", target: "es2022",
   conditions: ["workerd", "worker", "browser"], external: ["cloudflare:workers"],
 });
@@ -82,6 +81,7 @@ const worker = new Miniflare({ ...options,
     assert.ok(path.startsWith(prefix));
     const key = path.slice(prefix.length);
     if (request.method === "POST") {
+      if (rejectUpload === "network") throw new Error("Test-only storage DNS failure");
       if (rejectUpload) return Response.json({ message: "private upstream detail" }, { status: 503 });
       assert.equal(request.headers.get("x-upsert"), "false");
       photos.set(key, { bytes: await request.arrayBuffer(), type: request.headers.get("content-type") });
@@ -93,8 +93,8 @@ const worker = new Miniflare({ ...options,
 });
 try {
   const database = await worker.getD1Database("DB");
-  for (const file of readdirSync("drizzle").filter(file => file.endsWith(".sql")).sort()) {
-    for (const sql of readFileSync(`drizzle/${file}`, "utf8").split("--> statement-breakpoint").filter(sql => sql.trim())) await database.prepare(sql).run();
+  for (const file of readdirSync(projectPath("drizzle")).filter(file => file.endsWith(".sql")).sort()) {
+    for (const sql of readFileSync(projectPath("drizzle", file), "utf8").split("--> statement-breakpoint").filter(sql => sql.trim())) await database.prepare(sql).run();
   }
   const request = (path, method = "GET", body, cookie = "", headers = {}) => worker.dispatchFetch(origin + path, {
     method, headers: { Origin: origin, "Content-Type": "application/json", Cookie: cookie, ...headers },
@@ -169,16 +169,26 @@ try {
     assert.equal(photos.size, 1, "Deletion removes only the owner's photo");
     photos.clear();
     assert.equal((await request(item.image, "GET", undefined, alice)).status, 404);
-    rejectUpload = true;
-    const beforeFailure = storageCalls;
-    const form = new FormData();
-    form.append("data", JSON.stringify(details));
-    form.append("photo", new Blob([Uint8Array.from([137, 80, 78, 71])]), "test.png");
-    const failed = await worker.dispatchFetch(origin + "/api/wardrobe", { method: "POST", headers: { Origin: origin, Cookie: alice }, body: form });
-    assert.equal(failed.status, 503);
-    assert.ok(!(await failed.text()).includes("private upstream detail"));
-    assert.equal(storageCalls, beforeFailure + 1, "Failed uploads do not delete existing objects");
-    assert.equal((await (await request("/api/wardrobe", "GET", undefined, alice)).json()).items.length, 1);
+    for (const outage of [true, "network"]) {
+      rejectUpload = outage;
+      const beforeFailure = storageCalls;
+      const form = new FormData();
+      form.append("data", JSON.stringify(details));
+      form.append("photo", new Blob([Uint8Array.from([137, 80, 78, 71])]), "test.png");
+      const failed = await worker.dispatchFetch(origin + "/api/wardrobe", { method: "POST", headers: { Origin: origin, Cookie: alice }, body: form });
+      assert.equal(failed.status, 503);
+      const error = await failed.json();
+      assert.equal(error.code, "PHOTO_STORAGE_UNAVAILABLE");
+      assert.equal(error.error, "Хранилище фотографий временно недоступно. Попробуйте ещё раз позже.");
+      assert.ok(!JSON.stringify(error).includes("private upstream detail"));
+      assert.equal(storageCalls, beforeFailure + 1, "Failed uploads do not delete existing objects");
+      assert.equal((await (await request("/api/wardrobe", "GET", undefined, alice)).json()).items.length, 1);
+    }
+    rejectUpload = false;
+    const retried = await upload(alice);
+    assert.equal((await request(retried.image, "GET", undefined, alice)).status, 200);
+    assert.equal((await (await request("/api/wardrobe", "GET", undefined, alice)).json()).items.length, 2,
+      "A retry after storage recovery creates exactly one new item");
   }
 } finally { await worker.dispose(); }
 }

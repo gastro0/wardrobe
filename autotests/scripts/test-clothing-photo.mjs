@@ -1,15 +1,12 @@
 import assert from "node:assert/strict";
-import {createRequire} from "node:module";
-import {readFile, writeFile, access, readdir} from "node:fs/promises";
+import {readFile, writeFile, access, readdir, mkdir} from "node:fs/promises";
 import {createServer} from "node:http";
 import path from "node:path";
-import {fileURLToPath} from "node:url";
+import {build} from "esbuild";
 import {chromium} from "playwright-core";
+import {projectRoot as root, testRoot} from "../project.mjs";
 
-const root = fileURLToPath(new URL("../", import.meta.url));
-const runtimeRequire = createRequire(new URL("../node_modules/wrangler/package.json", import.meta.url));
-const {build} = runtimeRequire("esbuild");
-const outdir = path.join(root, ".sites-runtime/photo-test");
+const outdir = path.join(testRoot, ".artifacts/photo-test");
 const bundle = await build({entryPoints: [path.join(root, "lib/clothing-photo.ts"), path.join(root, "lib/clothing-photo.worker.ts")], bundle: true, splitting: true, format: "esm", platform: "browser", target: "chrome111", outdir, write: false, plugins: [{name: "worker-entry", setup(build) {
   build.onResolve({filter: /\?worker$/}, () => ({path: "photo-worker", namespace: "worker-entry"}));
   build.onLoad({filter: /.*/, namespace: "worker-entry"}, () => ({contents: 'export default class PhotoWorker extends Worker { constructor() { super(new URL("/clothing-photo.worker.js", location.href), {type: "module"}); } }', loader: "js"}));
@@ -40,7 +37,7 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 let browser;
 try {
-  const candidates = [process.env.PHOTO_TEST_BROWSER, "C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"].filter(Boolean);
+  const candidates = [process.env.PHOTO_TEST_BROWSER, "C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", chromium.executablePath(), "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean);
   let executablePath;
   for (const candidate of candidates) { try { await access(candidate); executablePath = candidate; break; } catch {} }
   if (!executablePath) throw new Error("Set PHOTO_TEST_BROWSER to an installed Chromium browser executable.");
@@ -83,8 +80,9 @@ try {
       return result;
     }));
   }, fixtures);
+  await mkdir(outdir, {recursive: true});
   for (const result of results) {
-    await writeFile(path.join(root, ".sites-runtime", "processed-" + result.name), new Uint8Array(result.image));
+    await writeFile(path.join(outdir, "processed-" + result.name), new Uint8Array(result.image));
     delete result.image;
     console.log(JSON.stringify(result));
     assert.equal(result.type, "image/png");
