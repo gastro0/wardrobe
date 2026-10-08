@@ -6,7 +6,7 @@ const RETAIN=2*60*MINUTE;
 type Entry={data?:unknown;fetchedAt:number;expires:number;modified?:string;blockedUntil?:number};
 const memory=new Map<string,Entry>();
 const pending=new Map<string,Promise<Entry>>();
-const USER_AGENT="FormaWardrobe/1.0 (https://forma-wardrobe.gastro0.chatgpt.site)";
+const USER_AGENT="FormaWardrobe/1.0 (https://forma-wardrobe.w4rdrobe.workers.dev)";
 
 async function read(key:string):Promise<Entry|undefined>{
   const entry=memory.get(key);
