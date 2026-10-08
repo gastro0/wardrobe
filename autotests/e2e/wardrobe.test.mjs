@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
 import {after, before, test} from "node:test";
 import {projectPath} from "../project.mjs";
 import {launchBrowser, mockWardrobe, mockTelegram} from "./fixture.mjs";
@@ -64,6 +65,91 @@ for (const viewport of [{width: 1280, height: 900}, {width: 390, height: 844}]) 
     await outfits.card("Без сумки").waitFor({state: "detached"});
   });
 }
+
+for (const width of [390, 1280]) {
+  test(`Clothing checkboxes show checkmarks in both themes at ${width}px`, async t => {
+    const {page, state, wardrobe} = await session(t, {width, height: 844}, {telegram: true});
+    const editor = new ItemEditorPage(page);
+    const telegram = new TelegramPage(page);
+    const labels = ["Защита от дождя", "Защита от ветра", "Определять по тегам и категории"];
+
+    for (const theme of ["light", "dark"]) {
+      await telegram.changeTheme(theme);
+      await editor.create();
+      for (const name of labels) {
+        const checkbox = editor.checkbox(name);
+        await checkbox.setChecked(false);
+        assert.equal(await checkbox.isChecked(), false);
+        const unchecked = await editor.checkboxAppearance(name);
+        assert.equal(unchecked.checkmarkVisible, false, `${name}: unchecked box has no checkmark`);
+
+        await checkbox.click();
+        assert.equal(await checkbox.isChecked(), true);
+        const checked = await editor.checkboxAppearance(name);
+        assert.equal(checked.checkmarkVisible, true, `${name}: selected box shows a checkmark`);
+        assert.equal(checked.background, checked.dialogBackground, `${name}: selection does not fill the box`);
+        assert.notEqual(checked.checkmarkColor, checked.background, `${name}: checkmark contrasts with its background`);
+
+        await editor.toggleCheckboxWithKeyboard(name);
+        assert.equal(await checkbox.isChecked(), false, `${name}: Space unchecks the box`);
+        const focused = await editor.checkboxAppearance(name);
+        assert.equal(focused.checkmarkVisible, false);
+        assert.equal(focused.focused && focused.focusVisible, true);
+      }
+      await editor.cancel();
+    }
+
+    await editor.open("Молочная футболка");
+    assert.equal(await editor.checkbox("Защита от дождя").isChecked(), true);
+    await editor.toggleCheckboxWithKeyboard("Защита от дождя");
+    await editor.saveChanges();
+    await editor.dialog.waitFor({state: "hidden"});
+    assert.equal(state.items[0].rainproof, false);
+    assert.equal(state.items[0].windproof, true);
+    await wardrobe.reload();
+    await editor.open("Молочная футболка");
+    assert.equal(await editor.checkbox("Защита от дождя").isChecked(), false);
+    assert.equal((await editor.checkboxAppearance("Защита от ветра")).checkmarkVisible, true);
+  });
+}
+
+test("Wardrobe reload waits for saved data while an unrelated image is still loading", async t => {
+  const {page, wardrobe} = await session(t, {width: 390, height: 844});
+  const image = await readFile(projectPath("public/images/blue-shirt.jpg"));
+  let releaseImage;
+  const imageGate = new Promise(resolve => { releaseImage = resolve; });
+  let finishImage;
+  const imageFinished = new Promise(resolve => { finishImage = resolve; });
+  let requested = false;
+  await page.route("**/images/e2e-slow.jpg", async route => {
+    requested = true;
+    try {
+      await imageGate;
+      await route.fulfill({body: image, contentType: "image/jpeg"});
+    } finally {
+      finishImage();
+    }
+  });
+  await page.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const image = document.createElement("img");
+      image.src = "/images/e2e-slow.jpg";
+      image.alt = "";
+      image.hidden = true;
+      document.body.append(image);
+    }, {once: true});
+  });
+  try {
+    await wardrobe.reload();
+    await wardrobe.item("Молочная футболка").waitFor();
+    assert.equal(requested, true);
+    assert.equal(await page.evaluate(() => document.readyState), "interactive",
+      "The wardrobe is usable before the unrelated image releases the load event");
+  } finally {
+    releaseImage();
+    if (requested) await imageFinished;
+  }
+});
 
 test("Clothing edits update the collection and persist after reload", async t => {
   const {page, state, wardrobe} = await session(t, {width: 390, height: 844});
