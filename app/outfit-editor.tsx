@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Layers, LoaderCircle, Plus, X } from "lucide-react";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Check, Layers, LoaderCircle, Plus } from "lucide-react";
+import { DialogDescription } from "@/components/ui/dialog";
+import AppDialog from "@/components/app-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { availableCategories, categories, categoryGroup, type Gender, type Item, type Outfit } from "@/lib/wardrobe";
@@ -21,6 +22,7 @@ type Props = {
 };
 
 export default function OutfitEditor({ items, initial, demo, gender, onClose, onSaved, onAddOwn }: Props) {
+  const [open, setOpen] = useState(true);
   const [name, setName] = useState(initial.name ?? "");
   const [selected, setSelected] = useState<string[]>(
     (initial.itemIds ?? []).filter(id => items.some(item => item.id === id))
@@ -62,15 +64,21 @@ export default function OutfitEditor({ items, initial, demo, gender, onClose, on
         onSaved(data.outfit);
         toast.success("Образ сохранён");
       }
-      onClose();
+      setOpen(false);
     } catch (error) { setError((error as Error).message); }
     finally { setBusy(false); }
   }
 
-  return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="outfit-dialog" showCloseButton={false}>
-      <DialogClose aria-label="Закрыть конструктор" className="dialog-x" disabled={busy}><X size={20}/></DialogClose>
-      <DialogTitle className="dialog-heading">{initial.id ? "Ваше сочетание" : "Собираем образ"}</DialogTitle>
+  return <AppDialog open={open} onOpenChange={setOpen} onClosed={onClose}
+    className="outfit-dialog" title={initial.id ? "Ваше сочетание" : "Собираем образ"}
+    closeLabel="Закрыть конструктор" busy={busy}
+    footer={<div className="form-footer">
+      <button className="btn" onClick={() => setOpen(false)} disabled={busy}>Отмена</button>
+      <button className="btn btn-primary" onClick={save} disabled={busy || !selected.length}>
+        {busy ? <LoaderCircle className="spin"/> : <Check/>}
+        {busy ? "Сохраняем…" : demo ? "Собрать пример" : "Сохранить образ"}
+      </button>
+    </div>}>
       <DialogDescription>{demo
         ? "Конструктор на примере вещей. Такие образы доступны до обновления страницы."
         : "Выбирайте вещи из гардероба — они появятся в образе."}</DialogDescription>
@@ -116,13 +124,5 @@ export default function OutfitEditor({ items, initial, demo, gender, onClose, on
         </div>
       </div>
       {error && <p role="alert" className="form-error">{error}</p>}
-      <div className="form-footer">
-        <button className="btn" onClick={onClose} disabled={busy}>Отмена</button>
-        <button className="btn btn-primary" onClick={save} disabled={busy || !selected.length}>
-          {busy ? <LoaderCircle className="spin"/> : <Check/>}
-          {busy ? "Сохраняем…" : demo ? "Собрать пример" : "Сохранить образ"}
-        </button>
-      </div>
-    </DialogContent>
-  </Dialog>;
+  </AppDialog>;
 }

@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/autotests/node_modules/
 /public/background-removal/
 /.pnp
 .pnp.*
@@ -13,6 +14,8 @@
 
 # testing
 /coverage
+/autotests/coverage/
+/autotests/.artifacts/
 
 # next.js
 /.next/
@@ -39,6 +42,7 @@ yarn-error.log*
 .vercel
 
 # typescript
+*.tsbuildinfo
 next-env.d.ts
 /dist/
 /.wrangler/

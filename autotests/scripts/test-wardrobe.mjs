@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import path from "node:path";
 import ts from "typescript";
-import { createRequire } from "node:module";
-// Use the simulator and bundler installed with the project's Wrangler runtime.
-const runtimeRequire = createRequire(new URL("../node_modules/wrangler/package.json", import.meta.url));
-const { build } = runtimeRequire("esbuild");
-const { Miniflare, FormData } = runtimeRequire("miniflare");
+import { build } from "esbuild";
+import { Miniflare, FormData } from "miniflare";
+import { projectRoot, projectPath } from "../project.mjs";
 
-const compiled = ts.transpileModule(fs.readFileSync("lib/wardrobe.ts", "utf8"), {
+const compiled = ts.transpileModule(fs.readFileSync(projectPath("lib/wardrobe.ts"), "utf8"), {
   compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext},
 }).outputText;
 const wardrobe = await import("data:text/javascript;base64," + Buffer.from(compiled).toString("base64"));
@@ -81,7 +78,7 @@ const bundle = await build({
       const handlers = {'/api/profile':profile,'/api/wardrobe':wardrobe,'/api/settings':settings,'/api/outfits':outfits};
       const handler = handlers[new URL(request.url).pathname]?.[request.method];
       return handler ? handler(request) : new Response('Not found', {status:404});
-    }};`, resolveDir: process.cwd(), sourcefile: "wardrobe-test-worker.ts"},
+    }};`, resolveDir: projectRoot, sourcefile: "wardrobe-test-worker.ts"},
   bundle: true, write: false, format: "esm", platform: "neutral", target: "es2022",
   conditions: ["workerd", "worker", "browser"], external: ["cloudflare:workers"],
 });
@@ -92,8 +89,8 @@ const worker = new Miniflare({
 });
 try {
   const database = await worker.getD1Database("DB");
-  for (const file of fs.readdirSync("drizzle").filter(file => file.endsWith(".sql")).sort()) {
-    for (const sql of fs.readFileSync(path.join("drizzle", file), "utf8").split("--> statement-breakpoint").filter(sql => sql.trim())) {
+  for (const file of fs.readdirSync(projectPath("drizzle")).filter(file => file.endsWith(".sql")).sort()) {
+    for (const sql of fs.readFileSync(projectPath("drizzle", file), "utf8").split("--> statement-breakpoint").filter(sql => sql.trim())) {
       await database.prepare(sql).run();
     }
   }

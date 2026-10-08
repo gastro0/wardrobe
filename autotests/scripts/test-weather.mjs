@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import ts from "typescript";
+import {projectPath} from "../project.mjs";
 
 function moduleUrl(path,replacements={}){
-  let code=ts.transpileModule(fs.readFileSync(path,"utf8"),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+  let code=ts.transpileModule(fs.readFileSync(projectPath(path),"utf8"),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   for(const [from,to] of Object.entries(replacements))code=code.replaceAll(from,to);
   return "data:text/javascript;base64,"+Buffer.from(code).toString("base64");
 }

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import ts from "typescript";
+import {projectPath} from "../project.mjs";
 
 // Test mask refinement without loading a browser or the inference model.
-const source=fs.readFileSync("lib/clothing-photo.ts","utf8").replace(/^import PhotoWorker from .*;$/m, "");
+const source=fs.readFileSync(projectPath("lib/clothing-photo.ts"),"utf8").replace(/^import PhotoWorker from .*;$/m, "");
 const compiled=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
 const {refineForegroundAlpha,removeMaskSpeckles,foregroundBounds}=await import("data:text/javascript;base64,"+Buffer.from(compiled).toString("base64"));
 const mask=new Uint8ClampedArray([

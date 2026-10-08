@@ -12,6 +12,7 @@ import { defaultCity, type City, type Item, type Outfit, type Profile } from "@/
 import { demoItems, demoOutfits } from "@/lib/demo";
 import { api } from "@/lib/client";
 import { useTelegramNavigation } from "@/hooks/use-telegram-navigation";
+import { requestDialogBack, useDialogBack } from "@/hooks/use-dialog-back";
 import { useWeather } from "@/hooks/use-weather";
 import { useWardrobeView } from "@/hooks/use-wardrobe-view";
 import CityPicker from "./city-picker";
@@ -52,15 +53,14 @@ export default function WardrobeApp({ initialName }: { initialName?: string }) {
 
   const dialogOpen = !!(editor || builder || deleting || cityOpen || profileOpen);
   const telegramBack = useCallback(() => {
-    if (dialogOpen) {
-      // Use the dialog's Escape handling to preserve focus and busy guards.
-      (document.activeElement ?? document).dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
-      );
-    } else setTab("wardrobe");
+    if (dialogOpen) requestDialogBack();
+    else setTab("wardrobe");
   }, [dialogOpen]);
   useTelegramNavigation(dialogOpen || tab !== "wardrobe" ? telegramBack : null,
     !!(editor || builder || profileOpen));
+  useDialogBack(!!deleting, useCallback(() => {
+    if (!deleteBusy) setDeleting(null);
+  }, [deleteBusy]));
 
   const { weather, weatherBusy, weatherError, day, setDay, refreshWeather } = useWeather(city);
   const load = useCallback(async () => {
@@ -217,7 +217,7 @@ export default function WardrobeApp({ initialName }: { initialName?: string }) {
     {builder && <OutfitEditor items={visibleItems} initial={builder} demo={demo}
       gender={gender} onClose={() => setBuilder(null)} onSaved={savedOutfit} onAddOwn={addOwn}/>}
     {cityOpen && <CityPicker onClose={() => setCityOpen(false)} onSelect={changeCity}/>}
-    {loaded && profileOpen && <ProfileEditor key={profile?.name ?? "new-profile"}
+    {loaded && profileOpen && <ProfileEditor
       profile={profile} initialName={initialName} onClose={() => setProfileOpen(false)}
       onSaved={savedProfile}/>}
     <AlertDialog open={!!deleting} onOpenChange={open => { if (!open && !deleteBusy) setDeleting(null); }}>
