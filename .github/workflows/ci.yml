@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, chore/git-ci-workflow]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      CLOUDFLARE_CF_FETCH_ENABLED: "false"
+      WRANGLER_SEND_METRICS: "false"
+      WRANGLER_WRITE_LOGS: "false"
+      E2E_BASE_URL: http://127.0.0.1:8787
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            autotests/package-lock.json
+
+      - name: Install application dependencies
+        run: npm run install:ci
+
+      - name: Install autotests dependencies
+        run: npm --prefix autotests ci
+
+      - name: Install Chromium
+        run: node autotests/node_modules/playwright-core/cli.js install --with-deps --no-shell chromium
+
+      - name: Check types
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit and API tests
+        run: npm test
+
+      - name: Photo alpha tests
+        run: npm --prefix autotests run test:photo-alpha
+
+      - name: Build application
+        run: npm run build
+
+      - name: Production photo worker tests
+        run: npm run test:photos -- --production-worker
+
+      - name: Browser tests on an isolated local Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p autotests/.artifacts
+          node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev \
+            --config dist/server/wrangler.json --local \
+            --persist-to autotests/.artifacts/worker-state \
+            --ip 127.0.0.1 --port 8787 --inspector-port 0 \
+            > autotests/.artifacts/worker.log 2>&1 &
+          worker_pid=$!
+          cleanup() {
+            if kill -0 "$worker_pid" 2>/dev/null; then
+              kill -TERM "$worker_pid"
+            fi
+          }
+          trap cleanup EXIT
+          ready=false
+          for attempt in {1..60}; do
+            if ! kill -0 "$worker_pid" 2>/dev/null; then
+              cat autotests/.artifacts/worker.log
+              exit 1
+            fi
+            if curl --fail --silent --output /dev/null "$E2E_BASE_URL"; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != true ]]; then
+            cat autotests/.artifacts/worker.log
+            echo "Local Worker did not become ready within 60 checks." >&2
+            exit 1
+          fi
+          npm run test:e2e
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-diagnostics
+          path: autotests/.artifacts/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
