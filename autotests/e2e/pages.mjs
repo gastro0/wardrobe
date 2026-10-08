@@ -3,8 +3,11 @@ export class WardrobePage {
   constructor(page) { this.page = page; }
   async open(baseURL) {
     await this.page.goto(baseURL);
+    await this.waitUntilReady();
+  }
+  async waitUntilReady(greeting = "Привет, Тест!") {
     await this.page.getByRole("heading", {name: "мой гардероб", exact: true}).waitFor();
-    await this.page.getByText("Привет, Тест!").waitFor();
+    await this.page.getByText(greeting).waitFor();
   }
   async selectCategory(name) {
     await this.page.getByRole("combobox", {name: "Категория вещей"}).click();
@@ -22,7 +25,10 @@ export class WardrobePage {
         right: innerWidth - bounds.right + parseFloat(style.paddingRight)};
     });
   }
-  async reload() { await this.page.reload(); }
+  async reload() {
+    await this.page.reload({waitUntil: "domcontentloaded"});
+    await this.waitUntilReady(/^Привет, /);
+  }
   async waitForFailedPhoto() { await this.page.getByText("Не удалось загрузить фото", {exact: true}).first().waitFor(); }
 }
 
@@ -42,6 +48,28 @@ export class ItemEditorPage {
     this.preview = this.dialog.getByRole("img");
   }
   async create() { await this.page.getByRole("button", {name: "Добавить вещь", exact: true}).click(); }
+  checkbox(name) { return this.dialog.getByRole("checkbox", {name, exact: true}); }
+  async toggleCheckboxWithKeyboard(name) {
+    const checkbox = this.checkbox(name);
+    await checkbox.focus();
+    await checkbox.press("Space");
+  }
+  async checkboxAppearance(name) {
+    return this.checkbox(name).evaluate(element => {
+      const style = getComputedStyle(element);
+      const icon = element.querySelector("[data-slot=checkbox-indicator] svg");
+      const bounds = icon?.getBoundingClientRect();
+      return {
+        background: style.backgroundColor,
+        dialogBackground: getComputedStyle(element.closest("[role=dialog]")).backgroundColor,
+        checkmarkVisible: !!icon && bounds.width > 0 && bounds.height > 0 &&
+          getComputedStyle(icon).visibility === "visible",
+        checkmarkColor: icon ? getComputedStyle(icon).stroke : null,
+        focused: element === document.activeElement,
+        focusVisible: element.matches(":focus-visible"),
+      };
+    });
+  }
   async choosePhoto(file) { await this.photo.setInputFiles(file); }
   async replacePhoto(file) {
     const chooser = this.page.waitForEvent("filechooser");
